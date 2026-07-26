@@ -27,11 +27,16 @@ class TestDaily(unittest.TestCase):
         self.cfg = load_config(DEFAULT_CONFIG_PATH)
         self.cfg.alerts.log_dir = self.tmp_dir
         self.cfg.data.cache_dir = self.tmp_dir
-        # Real IV-history logging hits the network per watchlist ticker;
-        # keep these tests offline and focused on email/report logic.
+        # Real IV-history logging and the hot-list ranking both hit the
+        # network per ticker; keep these tests offline and focused on
+        # email/report logic.
         iv_patcher = patch("src.iv_history.log_daily_snapshot", return_value="fake_iv_path")
         iv_patcher.start()
         self.addCleanup(iv_patcher.stop)
+
+        hot_patcher = patch("src.most_active.get_top_active", return_value=[])
+        hot_patcher.start()
+        self.addCleanup(hot_patcher.stop)
 
     def tearDown(self):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
@@ -118,6 +123,42 @@ class TestDaily(unittest.TestCase):
             result = run_daily(self.cfg)
 
         self.assertIn("need attention", result.subject)
+
+    def test_hot_list_included_when_configured(self):
+        self.cfg.notifications.include_hot_list = True
+        fake_row = MagicMock()
+        with patch("src.daily.run_screen", return_value=([], {})), \
+             patch("src.positions.check_all_open", return_value=[]), \
+             patch("src.most_active.get_top_active", return_value=[fake_row]) as mock_hot, \
+             patch("src.daily.alerts.format_console", return_value="text"), \
+             patch("src.most_active.format_console", return_value="HOTTICKER activity here"), \
+             patch("src.daily.send_email"):
+            result = run_daily(self.cfg)
+
+        mock_hot.assert_called_once()
+        self.assertIn("TODAY'S OPTIONS ACTIVITY", result.body)
+        self.assertIn("HOTTICKER activity here", result.body)
+
+    def test_hot_list_excluded_when_disabled(self):
+        self.cfg.notifications.include_hot_list = False
+        with patch("src.daily.run_screen", return_value=([], {})), \
+             patch("src.positions.check_all_open", return_value=[]), \
+             patch("src.most_active.get_top_active") as mock_hot, \
+             patch("src.daily.send_email"):
+            result = run_daily(self.cfg)
+
+        mock_hot.assert_not_called()
+        self.assertNotIn("TODAY'S OPTIONS ACTIVITY", result.body)
+
+    def test_hot_list_failure_does_not_break_the_email(self):
+        self.cfg.notifications.include_hot_list = True
+        with patch("src.daily.run_screen", return_value=([], {})), \
+             patch("src.positions.check_all_open", return_value=[]), \
+             patch("src.most_active.get_top_active", side_effect=RuntimeError("network blip")), \
+             patch("src.daily.send_email"):
+            result = run_daily(self.cfg)  # must not raise
+
+        self.assertIn("activity check failed", result.body)
 
 
 if __name__ == "__main__":

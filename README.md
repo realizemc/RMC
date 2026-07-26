@@ -78,11 +78,15 @@ This is not financial advice. Use at your own risk.
    against historical prices, using Black-Scholes with realized volatility
    as a modeled stand-in for option prices (see the caveats in that file's
    docstring -- it's a sanity check on the entry logic, not a promise).
-7. **Daily email** (`src/daily.py` + `src/notifier.py`) runs the scan,
-   position checks, and scorecard together and emails you the combined
-   report via Gmail SMTP. Nothing about email changes what the system does
-   -- it's the same output as the individual commands, just delivered
-   instead of printed.
+7. **Daily email** (`src/daily.py` + `src/notifier.py`) is the one-stop
+   version of everything above: new trade ideas, open-position guidance,
+   your realized track record, and the most-active discovery list (#9
+   below), combined into a single report and emailed via Gmail SMTP every
+   morning. Nothing about email changes what the system does -- it's the
+   same output as the individual commands, just delivered instead of
+   printed. Each section can be toggled independently in
+   `notifications.*` in `config.yaml`, and a failure in one section (e.g.
+   the activity check) never blocks the rest of the email from sending.
 8. **IV history logging** (`src/iv_history.py`) quietly records the real,
    observed at-the-money implied volatility for every watchlist ticker on
    every `scan`/`daily` run, into `data_cache/iv_history.csv`. This exists

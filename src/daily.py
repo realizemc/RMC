@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 from src import alerts
 from src import iv_history
+from src import most_active as most_active_mod
 from src import positions as positions_mod
 from src import scorecard as scorecard_mod
 from src.config import Config
@@ -54,6 +55,15 @@ def run_daily(cfg: Config, verbose: bool = False) -> DailyResult:
             "", "=== TRACK RECORD ===",
             scorecard_mod.summarize(sc, starting_capital=cfg.account.portfolio_value),
         ]
+
+    if cfg.notifications.include_hot_list:
+        try:
+            hot_rows = most_active_mod.get_top_active(cfg)
+            hot_text = most_active_mod.format_console(hot_rows)
+        except Exception as e:
+            hot_text = f"(activity check failed, skipping: {e})"
+        body_parts += ["", "=== TODAY'S OPTIONS ACTIVITY ===", hot_text]
+
     body = "\n".join(body_parts)
 
     if results:

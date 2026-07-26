@@ -88,6 +88,8 @@ notifications:
   # Send an email even on days with no new ideas and no open positions
   # (otherwise you only hear from it when there's something to look at).
   send_on_empty: false
+  # Include the `hot` most-active-options ranking in the same daily email.
+  include_hot_list: true
 
 most_active:
   # `python main.py hot` ranks this universe by today's near-term options

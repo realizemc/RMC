@@ -65,6 +65,7 @@ class NotificationsConfig:
     to_email: str
     include_position_checks: bool
     send_on_empty: bool
+    include_hot_list: bool
 
 
 @dataclass
