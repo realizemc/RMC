@@ -195,6 +195,14 @@ Track a trade after you've actually placed it in Robinhood:
 
 ```bash
 python main.py positions add 0        # tracks idea #0 from the last scan
+
+# Or track a trade the system never suggested -- something off `hot`,
+# or entirely your own pick. Looks up the real contract on the live chain
+# by strike, so it can still be checked/priced later like any other position.
+python main.py positions add-manual --ticker SOFI --structure long_call \
+    --expiration 2026-08-30 --strike 9.50 --cost 55.00 --contracts 2
+# add --short-strike X for a *_debit_spread structure
+
 python main.py positions list
 python main.py positions check        # tells you HOLD / take profit / cut loss / time exit
 python main.py positions close <id> --fill-price 88.00 --note "closed for +60%"

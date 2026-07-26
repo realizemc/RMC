@@ -182,5 +182,107 @@ class TestCheckPositionTheta(unittest.TestCase):
         self.assertTrue(any("THETA ACCELERATING" in a for a in result["actions"]))
 
 
+class TestAddManualPosition(unittest.TestCase):
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.cfg = load_config(DEFAULT_CONFIG_PATH)
+        self.cfg.alerts.log_dir = self.tmp_dir
+        self.exp = "2026-08-30"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def _snapshot(self):
+        calls = pd.DataFrame({
+            "contractSymbol": ["SOFI260830C00009500", "SOFI260830C00012000"],
+            "strike": [9.5, 12.0], "bid": [0.52, 0.20], "ask": [0.58, 0.26],
+            "impliedVolatility": [0.52, 0.48],
+        })
+        puts = pd.DataFrame({
+            "contractSymbol": ["SOFI260830P00009500"], "strike": [9.5],
+            "bid": [0.40], "ask": [0.46], "impliedVolatility": [0.50],
+        })
+        return data_mod.OptionChainSnapshot(
+            ticker="SOFI", underlying_price=9.60, expiration=self.exp, dte=35, calls=calls, puts=puts,
+        )
+
+    def test_long_call_success_finds_real_contract_symbol(self):
+        with patch("src.positions.get_option_chain", return_value=self._snapshot()):
+            pos, reason = positions_mod.add_manual_position(
+                self.cfg, ticker="sofi", structure="long_call", expiration=self.exp,
+                long_strike=9.5, entry_cost_per_contract=55.0, contracts=2,
+            )
+        self.assertEqual(reason, "ok")
+        self.assertIsNotNone(pos)
+        self.assertEqual(pos.ticker, "SOFI")
+        self.assertEqual(pos.long_contract_symbol, "SOFI260830C00009500")
+        self.assertIsNone(pos.short_contract_symbol)
+        self.assertEqual(pos.contracts, 2)
+        loaded = positions_mod.load_positions(self.cfg)
+        self.assertEqual(len(loaded), 1)
+
+    def test_debit_spread_success_finds_both_contract_symbols(self):
+        with patch("src.positions.get_option_chain", return_value=self._snapshot()):
+            pos, reason = positions_mod.add_manual_position(
+                self.cfg, ticker="SOFI", structure="call_debit_spread", expiration=self.exp,
+                long_strike=9.5, short_strike=12.0, entry_cost_per_contract=32.0, contracts=1,
+            )
+        self.assertEqual(reason, "ok")
+        self.assertEqual(pos.long_contract_symbol, "SOFI260830C00009500")
+        self.assertEqual(pos.short_contract_symbol, "SOFI260830C00012000")
+
+    def test_invalid_structure_rejected(self):
+        pos, reason = positions_mod.add_manual_position(
+            self.cfg, ticker="SOFI", structure="iron_condor", expiration=self.exp,
+            long_strike=9.5, entry_cost_per_contract=55.0, contracts=1,
+        )
+        self.assertIsNone(pos)
+        self.assertIn("structure must be one of", reason)
+
+    def test_spread_without_short_strike_rejected(self):
+        pos, reason = positions_mod.add_manual_position(
+            self.cfg, ticker="SOFI", structure="call_debit_spread", expiration=self.exp,
+            long_strike=9.5, entry_cost_per_contract=32.0, contracts=1,
+        )
+        self.assertIsNone(pos)
+        self.assertIn("requires a short_strike", reason)
+
+    def test_long_only_with_short_strike_rejected(self):
+        pos, reason = positions_mod.add_manual_position(
+            self.cfg, ticker="SOFI", structure="long_call", expiration=self.exp,
+            long_strike=9.5, short_strike=12.0, entry_cost_per_contract=55.0, contracts=1,
+        )
+        self.assertIsNone(pos)
+        self.assertIn("doesn't take a short_strike", reason)
+
+    def test_wrong_side_spread_strike_rejected(self):
+        # Selling a strike BELOW the long strike on a call spread is backwards.
+        with patch("src.positions.get_option_chain", return_value=self._snapshot()):
+            pos, reason = positions_mod.add_manual_position(
+                self.cfg, ticker="SOFI", structure="call_debit_spread", expiration=self.exp,
+                long_strike=12.0, short_strike=9.5, entry_cost_per_contract=32.0, contracts=1,
+            )
+        self.assertIsNone(pos)
+        self.assertIn("invalid call_debit_spread", reason)
+
+    def test_strike_not_on_chain_rejected(self):
+        with patch("src.positions.get_option_chain", return_value=self._snapshot()):
+            pos, reason = positions_mod.add_manual_position(
+                self.cfg, ticker="SOFI", structure="long_call", expiration=self.exp,
+                long_strike=50.0, entry_cost_per_contract=55.0, contracts=1,
+            )
+        self.assertIsNone(pos)
+        self.assertIn("no call contract found", reason)
+
+    def test_chain_unavailable_rejected(self):
+        with patch("src.positions.get_option_chain", return_value=None):
+            pos, reason = positions_mod.add_manual_position(
+                self.cfg, ticker="BADTICKER", structure="long_call", expiration=self.exp,
+                long_strike=9.5, entry_cost_per_contract=55.0, contracts=1,
+            )
+        self.assertIsNone(pos)
+        self.assertIn("could not load", reason)
+
+
 if __name__ == "__main__":
     unittest.main()

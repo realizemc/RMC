@@ -83,6 +83,91 @@ def add_position_from_scan(cfg: Config, scan: dict, idea_index: int, contracts: 
     return pos
 
 
+VALID_STRUCTURES = {"long_call", "long_put", "call_debit_spread", "put_debit_spread"}
+
+
+def _find_row_by_strike(chain_df, strike: float, tol: float = 0.005):
+    matches = chain_df[(chain_df["strike"] - strike).abs() <= tol]
+    if matches.empty:
+        return None
+    return matches.iloc[0]
+
+
+def add_manual_position(
+    cfg: Config,
+    ticker: str,
+    structure: str,
+    expiration: str,
+    long_strike: float,
+    entry_cost_per_contract: float,
+    contracts: int,
+    short_strike: Optional[float] = None,
+) -> tuple[Optional[Position], str]:
+    """Tracks a trade the system didn't suggest -- something you found on
+    `hot`, or a pick entirely of your own. Looks up the real contract(s) on
+    the live chain (by ticker/expiration/strike) so later `positions check`
+    calls can find and re-price them, exactly like a system-suggested idea.
+
+    Returns (Position, "ok") on success, or (None, reason) on failure --
+    never raises, so a typo'd strike/expiration just gets a clear message
+    instead of a crash.
+    """
+    if structure not in VALID_STRUCTURES:
+        return None, f"structure must be one of {sorted(VALID_STRUCTURES)}"
+
+    is_spread = "spread" in structure
+    if is_spread and short_strike is None:
+        return None, f"{structure} requires a short_strike"
+    if not is_spread and short_strike is not None:
+        return None, f"{structure} doesn't take a short_strike (that's only for debit spreads)"
+
+    option_type = "call" if "call" in structure else "put"
+
+    snap = get_option_chain(ticker, expiration)
+    if snap is None:
+        return None, f"could not load an options chain for {ticker} {expiration} (bad ticker/expiration, or market data unavailable)"
+
+    df = snap.calls if option_type == "call" else snap.puts
+    long_row = _find_row_by_strike(df, long_strike)
+    if long_row is None:
+        return None, f"no {option_type} contract found at strike {long_strike} for {ticker} {expiration}"
+
+    short_contract_symbol = None
+    if is_spread:
+        short_row = _find_row_by_strike(df, short_strike)
+        if short_row is None:
+            return None, f"no {option_type} contract found at short strike {short_strike} for {ticker} {expiration}"
+        is_valid_spread = (
+            (option_type == "call" and short_strike > long_strike)
+            or (option_type == "put" and short_strike < long_strike)
+        )
+        if not is_valid_spread:
+            return None, (
+                f"invalid {structure}: short strike must be "
+                f"{'above' if option_type == 'call' else 'below'} the long strike"
+            )
+        short_contract_symbol = str(short_row["contractSymbol"])
+
+    pos = Position(
+        id=str(uuid.uuid4())[:8],
+        ticker=ticker.upper(),
+        structure=structure,
+        expiration=expiration,
+        long_strike=long_strike,
+        short_strike=short_strike,
+        long_contract_symbol=str(long_row["contractSymbol"]),
+        short_contract_symbol=short_contract_symbol,
+        entry_cost_per_contract=entry_cost_per_contract,
+        contracts=contracts,
+        entry_date=dt.date.today().isoformat(),
+    )
+
+    positions = load_positions(cfg)
+    positions.append(pos)
+    save_positions(cfg, positions)
+    return pos, "ok"
+
+
 def close_position(
     cfg: Config,
     position_id: str,

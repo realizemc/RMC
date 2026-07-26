@@ -4,6 +4,7 @@
   python main.py scan                 -- run today's screen, print + log ideas
   python main.py backtest              -- backtest the strategy's signal logic
   python main.py positions add IDX     -- start tracking idea #IDX from the last scan
+  python main.py positions add-manual  -- track a trade the system didn't suggest
   python main.py positions list        -- show tracked positions
   python main.py positions check       -- get hold/close guidance on open positions
   python main.py positions close ID    -- mark a position closed (records realized P/L)
@@ -116,6 +117,26 @@ def cmd_positions_add(args):
     print("Only run this AFTER you've actually placed the trade in Robinhood.")
 
 
+def cmd_positions_add_manual(args):
+    cfg = load_config(args.config)
+    pos, reason = positions_mod.add_manual_position(
+        cfg,
+        ticker=args.ticker.upper(),
+        structure=args.structure,
+        expiration=args.expiration,
+        long_strike=args.strike,
+        entry_cost_per_contract=args.cost,
+        contracts=args.contracts,
+        short_strike=args.short_strike,
+    )
+    if pos is None:
+        print(f"Could not track position: {reason}")
+        sys.exit(1)
+    print(f"Tracking position {pos.id}: {pos.contracts}x {pos.ticker} {pos.structure} "
+          f"{pos.expiration} (entry cost/contract ${pos.entry_cost_per_contract:.2f})")
+    print("Only run this AFTER you've actually placed the trade in Robinhood.")
+
+
 def cmd_positions_list(args):
     cfg = load_config(args.config)
     pos_list = positions_mod.load_positions(cfg)
@@ -193,6 +214,27 @@ def build_parser():
     p_pos_add.add_argument("idx", type=int, help="Idea index from the last `scan` run")
     p_pos_add.add_argument("--contracts", type=int, default=None, help="Override suggested contract count")
     p_pos_add.set_defaults(func=cmd_positions_add)
+
+    p_pos_add_manual = pos_sub.add_parser(
+        "add-manual", help="Track a trade the system didn't suggest (e.g. from `hot` or your own pick)",
+    )
+    p_pos_add_manual.add_argument("--ticker", required=True)
+    p_pos_add_manual.add_argument(
+        "--structure", required=True,
+        choices=sorted(positions_mod.VALID_STRUCTURES),
+    )
+    p_pos_add_manual.add_argument("--expiration", required=True, help="YYYY-MM-DD")
+    p_pos_add_manual.add_argument("--strike", required=True, type=float, help="Long leg strike")
+    p_pos_add_manual.add_argument(
+        "--short-strike", dest="short_strike", type=float, default=None,
+        help="Short leg strike -- required for *_debit_spread structures, omit otherwise",
+    )
+    p_pos_add_manual.add_argument(
+        "--cost", required=True, type=float,
+        help="What you actually paid, total $ per contract (e.g. 55.00 for a $0.55 premium)",
+    )
+    p_pos_add_manual.add_argument("--contracts", required=True, type=int)
+    p_pos_add_manual.set_defaults(func=cmd_positions_add_manual)
 
     p_pos_list = pos_sub.add_parser("list", help="List tracked positions")
     p_pos_list.set_defaults(func=cmd_positions_list)
