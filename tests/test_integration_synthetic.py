@@ -96,7 +96,7 @@ class TestSyntheticPipeline(unittest.TestCase):
         self.assertLessEqual(results[0].sizing.total_cost, self.cfg.account.max_trade_cost_usd + 1e-6)
 
         # Output formatting shouldn't blow up on a real idea.
-        text = alerts.format_console(results)
+        text = alerts.format_console(results, self.cfg)
         self.assertIn("FAKEUP", text)
         self.assertIn("BUY", text)
 

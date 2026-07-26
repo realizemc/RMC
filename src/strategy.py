@@ -53,10 +53,44 @@ class TradeIdea:
     iv_rank_proxy: float
     rsi: float
     rationale: str = field(default="")
+    # Trailing daily returns of the underlying, used by the screener's
+    # diversification check -- not fetched again, just carried along from
+    # the price history this idea already pulled.
+    recent_returns: list = field(default_factory=list)
+    # 0-1 heuristic: how centered RSI is in its entry band + how much
+    # headroom is left under the volatility-percentile cap. NOT a
+    # probability of profit -- just used to scale position size a bit
+    # bigger on stronger setups and smaller on marginal ones.
+    confidence: float = 1.0
 
 
 def _option_type_for_direction(direction: str) -> str:
     return "call" if direction == "bullish" else "put"
+
+
+def _clip01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
+def _confidence_score(trend: str, rsi_val: float, iv_rank: float, cfg: Config) -> float:
+    """0-1 heuristic blending how centered RSI is in its entry band with
+    how much headroom is left under the volatility-percentile cap. This is
+    NOT a probability of profit -- it's a rough "how clean is this setup"
+    signal used only to scale position size a bit, never to gate a trade
+    (that's what the hard filters upstream already do)."""
+    if trend == "bullish":
+        lo, hi = cfg.strategy.rsi_bull_min, cfg.strategy.rsi_bull_max
+    else:
+        lo, hi = cfg.strategy.rsi_bear_min, cfg.strategy.rsi_bear_max
+    center, half = (lo + hi) / 2, (hi - lo) / 2
+    rsi_confidence = _clip01(1 - abs(rsi_val - center) / half) if half > 0 else 1.0
+
+    vol_confidence = (
+        _clip01(1 - iv_rank / cfg.strategy.iv_rank_max_pct)
+        if cfg.strategy.iv_rank_max_pct > 0 else 1.0
+    )
+
+    return (rsi_confidence + vol_confidence) / 2
 
 
 def _liquid(row, cfg) -> bool:
@@ -242,6 +276,9 @@ def evaluate_ticker(ticker: str, cfg: Config) -> tuple[Optional[TradeIdea], str]
     if short_leg is not None:
         rationale_bits.append("built as a debit spread to fit your per-trade budget")
 
+    recent_returns = close.pct_change().dropna().tail(60).tolist()
+    confidence = _confidence_score(trend, rsi_val, iv_rank, cfg)
+
     idea = TradeIdea(
         ticker=ticker,
         direction=trend,
@@ -258,5 +295,7 @@ def evaluate_ticker(ticker: str, cfg: Config) -> tuple[Optional[TradeIdea], str]
         iv_rank_proxy=iv_rank,
         rsi=rsi_val,
         rationale="; ".join(rationale_bits),
+        recent_returns=recent_returns,
+        confidence=confidence,
     )
     return idea, "ok"

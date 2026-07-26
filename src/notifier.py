@@ -37,8 +37,13 @@ def _get_credentials() -> tuple[str, str]:
     return sender, password
 
 
-def send_email(subject: str, body: str, to_addr: str) -> None:
-    """Raises NotifierError on missing credentials or SMTP failure."""
+def send_email(subject: str, body: str, to_addr: str, html_body: str | None = None) -> None:
+    """Raises NotifierError on missing credentials or SMTP failure.
+
+    If `html_body` is given, sends a multipart email (plain text + HTML)
+    so clients that render HTML show the dashboard version, and everything
+    else falls back to the plain-text body.
+    """
     sender, password = _get_credentials()
 
     msg = EmailMessage()
@@ -46,6 +51,8 @@ def send_email(subject: str, body: str, to_addr: str) -> None:
     msg["From"] = sender
     msg["To"] = to_addr
     msg.set_content(body)
+    if html_body is not None:
+        msg.add_alternative(html_body, subtype="html")
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:

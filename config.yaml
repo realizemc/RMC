@@ -14,6 +14,18 @@ account:
   # Skip any idea whose total contract cost exceeds this many dollars,
   # even if max_risk_per_trade_pct would technically allow more.
   max_trade_cost_usd: 150.0
+  # Diversification guard: skip a candidate idea if its underlying's daily
+  # returns are this correlated (Pearson, trailing ~60 days) or more with
+  # an already-accepted idea in the SAME direction. Stops all 3 open slots
+  # from secretly being the same bet (e.g. three EV names that move
+  # together). Correlated ideas in OPPOSITE directions aren't flagged --
+  # that's a hedge, not redundancy.
+  max_correlation: 0.7
+  # Confidence-weighted sizing: a marginal setup (RSI near the edge of its
+  # band, volatility percentile near the cap) gets this fraction of the
+  # normal risk budget; a clean, centered setup gets the full 100%. This
+  # scales the SAME per-trade caps above -- it never raises them.
+  confidence_size_floor_pct: 0.7
 
 watchlist:
   # Liquid, optionable, cheap-enough-premium names. Edit freely.

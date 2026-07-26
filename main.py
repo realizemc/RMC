@@ -47,7 +47,7 @@ def cmd_scan(args):
 
     results, reasons = run_screen(cfg, verbose=args.verbose)
 
-    print(alerts.format_console(results))
+    print(alerts.format_console(results, cfg))
 
     csv_path = alerts.append_csv_log(results, cfg)
     scan_path = alerts.save_last_scan(results, cfg)

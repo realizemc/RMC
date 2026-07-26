@@ -55,10 +55,22 @@ This is not financial advice. Use at your own risk.
      to land before the option expires (`strategy.avoid_earnings`) -- a
      long option held through earnings is exposed to an IV crush that can
      erase the premium even when the direction call is right.
-2. **Position sizing** (`src/position_sizing.py`) caps each idea at
-   `max_risk_per_trade_pct` of your account (or `max_trade_cost_usd`,
-   whichever is smaller), and never recommends more than
-   `max_open_positions` ideas across a scan.
+2. **Position sizing** (`src/position_sizing.py`, `src/screener.py`) caps
+   each idea at `max_risk_per_trade_pct` of your account (or
+   `max_trade_cost_usd`, whichever is smaller), and never recommends more
+   than `max_open_positions` ideas across a scan. Two refinements on top:
+   - **Confidence-weighted sizing**: each idea gets a 0-1 "setup
+     confidence" score (how centered RSI is in its entry band, how much
+     headroom is left under the volatility-percentile cap). A marginal
+     setup gets `confidence_size_floor_pct` of the normal risk budget; a
+     clean one gets the full amount. This scales the same hard caps above,
+     never raises them, and is a heuristic for sizing -- not a
+     win-probability.
+   - **Diversification guard**: a candidate is skipped if its underlying's
+     daily returns are too correlated (`max_correlation`, trailing ~60
+     days) with an already-accepted idea in the SAME direction, so your 3
+     open slots can't quietly all be the same bet. Correlated ideas in
+     opposite directions aren't flagged -- that's a hedge, not redundancy.
 3. **Alerts** (`src/alerts.py`) print a plain-English trade ticket to your
    terminal, log every idea to `logs/alerts_log.csv`, and write a daily
    `logs/report_YYYY-MM-DD.md`.
@@ -78,15 +90,18 @@ This is not financial advice. Use at your own risk.
    against historical prices, using Black-Scholes with realized volatility
    as a modeled stand-in for option prices (see the caveats in that file's
    docstring -- it's a sanity check on the entry logic, not a promise).
-7. **Daily email** (`src/daily.py` + `src/notifier.py`) is the one-stop
-   version of everything above: new trade ideas, open-position guidance,
-   your realized track record, and the most-active discovery list (#9
-   below), combined into a single report and emailed via Gmail SMTP every
-   morning. Nothing about email changes what the system does -- it's the
-   same output as the individual commands, just delivered instead of
-   printed. Each section can be toggled independently in
-   `notifications.*` in `config.yaml`, and a failure in one section (e.g.
-   the activity check) never blocks the rest of the email from sending.
+7. **Daily email** (`src/daily.py` + `src/notifier.py` + `src/html_report.py`)
+   is the one-stop version of everything above: new trade ideas,
+   open-position guidance (color-coded by urgency), your realized track
+   record with an equity sparkline, and the most-active discovery list (#9
+   below) -- rendered as an HTML dashboard and emailed via Gmail SMTP every
+   morning, with a plain-text fallback for clients that don't render HTML.
+   Each section can be toggled independently in `notifications.*` in
+   `config.yaml`, and a failure in any one section (HTML rendering, the
+   activity check) degrades gracefully instead of blocking the rest of the
+   email from sending. `src/equity_history.py` logs one rough equity point
+   per day (starting capital + cumulative realized P/L) so the dashboard
+   has a trend to draw.
 8. **IV history logging** (`src/iv_history.py`) quietly records the real,
    observed at-the-money implied volatility for every watchlist ticker on
    every `scan`/`daily` run, into `data_cache/iv_history.csv`. This exists
@@ -211,14 +226,16 @@ src/
   positions.py            Manual trade tracking + realized P/L on close
   scorecard.py            Rolls up closed positions into a win-rate/P&L track record
   backtest.py             Historical signal backtest (modeled option prices)
-  daily.py                Combines scan + position checks + scorecard into one emailed report
-  notifier.py             Gmail SMTP sending (credentials via env vars only)
+  daily.py                Combines scan + position checks + scorecard + activity into one emailed report
+  notifier.py             Gmail SMTP sending, plain-text + HTML multipart (credentials via env vars only)
+  html_report.py          Renders the daily report as an email-safe HTML dashboard
+  equity_history.py       Logs a rough daily equity point for the dashboard's sparkline
   iv_history.py           Logs real chain IV daily for a future real IV-rank upgrade
   most_active.py          `hot` command: ranks a curated universe by options volume
 tests/                  Unit tests for every module above, plus an end-to-end
                         synthetic-data integration test
 logs/                   CSV log, markdown reports, tracked positions (gitignored)
-data_cache/             Price/chain caching + iv_history.csv (gitignored)
+data_cache/             Price/chain caching, iv_history.csv, equity_history.csv (gitignored)
 ```
 
 ## Automating it (no need to keep your computer on)

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from src.config import load_config, DEFAULT_CONFIG_PATH
 from src.daily import run_daily
+from src.most_active import ActivityRow
 from src.notifier import NotifierError
 from src.positions import Position
 
@@ -126,7 +127,11 @@ class TestDaily(unittest.TestCase):
 
     def test_hot_list_included_when_configured(self):
         self.cfg.notifications.include_hot_list = True
-        fake_row = MagicMock()
+        fake_row = ActivityRow(
+            ticker="HOTTICKER", price=42.0, expiration="2026-08-30", dte=35,
+            call_volume=1000, put_volume=500, total_volume=1500,
+            open_interest=5000, put_call_ratio=0.5,
+        )
         with patch("src.daily.run_screen", return_value=([], {})), \
              patch("src.positions.check_all_open", return_value=[]), \
              patch("src.most_active.get_top_active", return_value=[fake_row]) as mock_hot, \

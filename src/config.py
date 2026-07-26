@@ -16,6 +16,8 @@ class AccountConfig:
     max_risk_per_trade_pct: float
     max_open_positions: int
     max_trade_cost_usd: float
+    max_correlation: float
+    confidence_size_floor_pct: float
 
 
 @dataclass

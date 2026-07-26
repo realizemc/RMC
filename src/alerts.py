@@ -53,7 +53,7 @@ def _result_to_dict(r: ScreenResult) -> dict:
     }
 
 
-def format_console(results: list[ScreenResult]) -> str:
+def format_console(results: list[ScreenResult], cfg: Config) -> str:
     if not results:
         return (
             "No trade ideas cleared every filter today (trend + RSI + volatility "
@@ -95,10 +95,11 @@ def format_console(results: list[ScreenResult]) -> str:
         else:
             lines.append("Max profit / contract: uncapped (long option) -- theoretical, real gains taper via theta/vega")
         lines.append(f"Breakeven at expiry  : ${idea.breakeven:.2f}")
+        lines.append(f"Setup confidence     : {idea.confidence * 100:.0f}% (scales position size, not a win-probability)")
         lines.append(f"Why: {idea.rationale}")
         lines.append(
-            f"Plan: take profit around +{60:.0f}% of premium, cut losses around "
-            f"-{50:.0f}%, or close by {idea.dte - 10} DTE if neither hits first."
+            f"Plan: take profit around +{cfg.exits.profit_target_pct * 100:.0f}% of premium, cut losses around "
+            f"-{cfg.exits.stop_loss_pct * 100:.0f}%, or close by {idea.dte - cfg.exits.close_by_dte} DTE if neither hits first."
         )
 
     lines.append(f"\n{'=' * 60}")
