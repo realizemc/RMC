@@ -1,0 +1,75 @@
+# Options Alert System configuration
+# Tune these to your account and taste. Nothing here places real orders --
+# this whole system is decision support / alerts only.
+
+account:
+  # Your actual account value. Used only to size suggested contract counts
+  # and cap risk per idea -- this system never reads your real balance.
+  portfolio_value: 500.0
+  # Max % of portfolio_value to risk on a single trade idea.
+  max_risk_per_trade_pct: 0.20
+  # Never suggest more than this many open ideas at once (diversification floor
+  # for an account this small is weak, but this stops going all-in on one name).
+  max_open_positions: 3
+  # Skip any idea whose total contract cost exceeds this many dollars,
+  # even if max_risk_per_trade_pct would technically allow more.
+  max_trade_cost_usd: 150.0
+
+watchlist:
+  # Liquid, optionable, cheap-enough-premium names. Edit freely.
+  # Cheap-underlying names are included because $500 accounts need low
+  # dollar premiums to get more than one shot at a trade.
+  - SOFI
+  - F
+  - PLTR
+  - NIO
+  - AAL
+  - INTC
+  - RIVN
+  - PLUG
+  - SIRI
+  - T
+
+strategy:
+  # Target days-to-expiration window for new entries. 30-45 DTE balances
+  # theta decay against having enough time for a thesis to play out.
+  min_dte: 25
+  max_dte: 50
+  # Target delta band (absolute value) for the "long leg" of a trade.
+  long_leg_delta_min: 0.35
+  long_leg_delta_max: 0.60
+  # Target delta for the short leg when a debit spread is used to cut cost.
+  short_leg_delta_min: 0.15
+  short_leg_delta_max: 0.30
+  # Technical filters
+  rsi_period: 14
+  rsi_bull_min: 45
+  rsi_bull_max: 75
+  rsi_bear_min: 25
+  rsi_bear_max: 55
+  sma_fast: 20
+  sma_slow: 50
+  # Historical-volatility percentile (1yr lookback) used as an IV-rank proxy.
+  # We prefer buying premium when IV is NOT already elevated.
+  iv_rank_max_pct: 65
+  # Minimum open interest / volume for a contract to be considered liquid
+  # enough to actually trade on Robinhood without garbage fills.
+  min_open_interest: 100
+  min_volume: 10
+  max_bid_ask_spread_pct: 0.15
+
+exits:
+  # Classic long-premium risk management: take profit early, cut losses hard,
+  # and always exit before theta decay accelerates near expiration.
+  profit_target_pct: 0.60
+  stop_loss_pct: 0.50
+  close_by_dte: 10
+
+data:
+  price_history_period: "1y"
+  cache_dir: "data_cache"
+
+alerts:
+  log_dir: "logs"
+  # Also write a markdown daily report in addition to the CSV log.
+  write_markdown: true

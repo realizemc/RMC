@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+data_cache/*
+!data_cache/.gitkeep
+logs/*
+!logs/.gitkeep
+.env
+*.egg-info/
