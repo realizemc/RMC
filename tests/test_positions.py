@@ -1,10 +1,15 @@
+import datetime as dt
 import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
 
+import pandas as pd
+
 from src.config import load_config, DEFAULT_CONFIG_PATH
+from src import data as data_mod
 from src import positions as positions_mod
+from src.options_pricing import bs_theta
 
 
 def _fake_scan(cost_per_contract=55.0, contracts=2, short_leg=None):
@@ -81,6 +86,100 @@ class TestPositions(unittest.TestCase):
 
     def test_close_nonexistent_id_returns_false(self):
         self.assertFalse(positions_mod.close_position(self.cfg, "doesnotexist"))
+
+
+class TestCheckPositionTheta(unittest.TestCase):
+    def setUp(self):
+        self.cfg = load_config(DEFAULT_CONFIG_PATH)
+        self.exp = (dt.date.today() + dt.timedelta(days=20)).isoformat()
+
+    def _snapshot(self, calls=None, puts=None, dte=20, S=10.05):
+        empty = pd.DataFrame({"contractSymbol": [], "strike": [], "bid": [], "ask": [], "impliedVolatility": []})
+        return data_mod.OptionChainSnapshot(
+            ticker="SOFI", underlying_price=S, expiration=self.exp, dte=dte,
+            calls=calls if calls is not None else empty,
+            puts=puts if puts is not None else empty,
+        )
+
+    def _long_call_position(self):
+        return positions_mod.Position(
+            id="p1", ticker="SOFI", structure="long_call", expiration=self.exp,
+            long_strike=10.0, short_strike=None, long_contract_symbol="X",
+            short_contract_symbol=None, entry_cost_per_contract=100.0, contracts=1,
+            entry_date="2026-07-01",
+        )
+
+    def test_theta_fields_present_and_negative_for_long_call(self):
+        calls = pd.DataFrame({"contractSymbol": ["X"], "strike": [10.0], "bid": [0.95], "ask": [1.05],
+                               "impliedVolatility": [0.55]})
+        pos = self._long_call_position()
+        with patch("src.positions.get_option_chain", return_value=self._snapshot(calls=calls)):
+            result = positions_mod.check_position(self.cfg, pos)
+
+        self.assertIsNotNone(result["theta_per_contract"])
+        self.assertLess(result["theta_per_contract"], 0.0)
+        self.assertGreater(result["theta_pct_of_value"], 0.0)
+
+    def test_debit_spread_theta_is_smaller_magnitude_than_naked_long(self):
+        calls = pd.DataFrame({
+            "contractSymbol": ["LONG", "SHORT"], "strike": [10.0, 12.0],
+            "bid": [0.95, 0.30], "ask": [1.05, 0.40], "impliedVolatility": [0.55, 0.50],
+        })
+        naked_pos = positions_mod.Position(
+            id="p1", ticker="SOFI", structure="long_call", expiration=self.exp,
+            long_strike=10.0, short_strike=None, long_contract_symbol="LONG",
+            short_contract_symbol=None, entry_cost_per_contract=100.0, contracts=1,
+            entry_date="2026-07-01",
+        )
+        spread_pos = positions_mod.Position(
+            id="p2", ticker="SOFI", structure="call_debit_spread", expiration=self.exp,
+            long_strike=10.0, short_strike=12.0, long_contract_symbol="LONG",
+            short_contract_symbol="SHORT", entry_cost_per_contract=70.0, contracts=1,
+            entry_date="2026-07-01",
+        )
+
+        with patch("src.positions.get_option_chain", return_value=self._snapshot(calls=calls)):
+            naked_result = positions_mod.check_position(self.cfg, naked_pos)
+            spread_result = positions_mod.check_position(self.cfg, spread_pos)
+
+        self.assertLess(
+            abs(spread_result["theta_per_contract"]),
+            abs(naked_result["theta_per_contract"]),
+        )
+
+    def test_calendar_mode_ignores_theta_pct(self):
+        self.cfg.exits.exit_rule_mode = "calendar"
+        self.cfg.exits.close_by_dte = 10
+        calls = pd.DataFrame({"contractSymbol": ["X"], "strike": [10.0], "bid": [0.10], "ask": [0.15],
+                               "impliedVolatility": [0.55]})
+        pos = self._long_call_position()
+        # Fast-decaying near-expiry contract, but plenty of DTE left relative
+        # to close_by_dte, so calendar mode should stay quiet about theta.
+        with patch("src.positions.get_option_chain", return_value=self._snapshot(calls=calls, dte=20)):
+            result = positions_mod.check_position(self.cfg, pos)
+
+        self.assertFalse(any("THETA" in a for a in result["actions"]))
+
+    def test_theta_pct_mode_triggers_close_to_expiration(self):
+        self.cfg.exits.exit_rule_mode = "theta_pct"
+        self.cfg.exits.theta_pct_of_value = 0.05
+        near_exp = (dt.date.today() + dt.timedelta(days=3)).isoformat()
+        calls = pd.DataFrame({"contractSymbol": ["X"], "strike": [10.0], "bid": [0.20], "ask": [0.30],
+                               "impliedVolatility": [0.55]})
+        pos = positions_mod.Position(
+            id="p1", ticker="SOFI", structure="long_call", expiration=near_exp,
+            long_strike=10.0, short_strike=None, long_contract_symbol="X",
+            short_contract_symbol=None, entry_cost_per_contract=100.0, contracts=1,
+            entry_date="2026-07-01",
+        )
+        snap = data_mod.OptionChainSnapshot(
+            ticker="SOFI", underlying_price=10.05, expiration=near_exp, dte=3, calls=calls,
+            puts=pd.DataFrame({"contractSymbol": [], "strike": [], "bid": [], "ask": [], "impliedVolatility": []}),
+        )
+        with patch("src.positions.get_option_chain", return_value=snap):
+            result = positions_mod.check_position(self.cfg, pos)
+
+        self.assertTrue(any("THETA ACCELERATING" in a for a in result["actions"]))
 
 
 if __name__ == "__main__":

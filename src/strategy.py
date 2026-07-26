@@ -20,7 +20,7 @@ import pandas as pd
 from src import data as data_mod
 from src import indicators
 from src.config import Config
-from src.options_pricing import bs_delta, implied_volatility
+from src.options_pricing import bs_delta, resolve_implied_vol
 
 
 @dataclass
@@ -115,11 +115,9 @@ def _row_to_leg(row, S: float, T: float, r: float, option_type: str) -> Optional
     mid = (bid + ask) / 2
     K = float(row["strike"])
 
-    iv = row.get("impliedVolatility", None)
-    if iv is None or iv != iv or iv <= 0:  # NaN check via iv != iv
-        iv = implied_volatility(mid, S, K, T, r, option_type)
-        if iv is None:
-            return None
+    iv = resolve_implied_vol(row.get("impliedVolatility"), mid, S, K, T, r, option_type)
+    if iv is None:
+        return None
 
     delta = bs_delta(S, K, T, r, iv, option_type)
 

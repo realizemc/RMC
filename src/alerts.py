@@ -128,6 +128,12 @@ def format_position_checks(checks: list[dict]) -> str:
             f"(entry ${p.entry_cost_per_contract:.2f})"
         )
         lines.append(f"  P/L: {c['pnl_pct'] * 100:+.1f}% (${c['pnl_dollars']:+.2f} total)")
+        theta = c.get("theta_per_contract")
+        if theta is not None:
+            lines.append(
+                f"  Theta decay   : ${theta:+.2f}/day/contract "
+                f"({c['theta_pct_of_value'] * 100:.1f}%/day of current value)"
+            )
         for action in c["actions"]:
             lines.append(f"  -> {action}")
     return "\n".join(lines)

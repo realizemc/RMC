@@ -46,7 +46,9 @@ class StrategyConfig:
 class ExitsConfig:
     profit_target_pct: float
     stop_loss_pct: float
+    exit_rule_mode: str
     close_by_dte: int
+    theta_pct_of_value: float
 
 
 @dataclass

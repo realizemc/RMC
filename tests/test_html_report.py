@@ -74,6 +74,19 @@ class TestHtmlReport(unittest.TestCase):
         )
         self.assertIn("TAKE PROFIT", html)
 
+    def test_renders_theta_and_theta_urgency_badge(self):
+        pos = _fake_position()
+        checks = [
+            {"position": pos, "dte_remaining": 3, "current_value_per_contract": 25.0,
+             "pnl_pct": -0.5, "pnl_dollars": -25.0, "theta_per_contract": -2.8, "theta_pct_of_value": 0.112,
+             "actions": ["THETA ACCELERATING (losing 11.2%/day of value) -- consider closing"]},
+        ]
+        html = html_report.render_html(
+            self.cfg, [], checks, Scorecard(), None, None, pd.DataFrame(columns=["date", "equity"]),
+        )
+        self.assertIn("TIME EXIT", html)
+        self.assertIn("theta $-2.80/day", html)
+
     def test_renders_error_check_gracefully(self):
         pos = _fake_position()
         checks = [{"position": pos, "error": "chain unavailable"}]

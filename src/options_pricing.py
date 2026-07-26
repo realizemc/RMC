@@ -44,6 +44,25 @@ def bs_delta(S: float, K: float, T: float, r: float, sigma: float, option_type: 
     return float(norm.cdf(d1) - 1.0)
 
 
+def bs_theta(S: float, K: float, T: float, r: float, sigma: float, option_type: str) -> float:
+    """Time decay in dollars PER DAY, per share (multiply by 100 for a
+    per-contract figure). Negative for a long option -- it loses this much
+    value per day holding the underlying price and volatility fixed.
+
+    This is the closed-form Black-Scholes theta, annualized then divided by
+    365 to match this codebase's calendar-day convention for T (see
+    strategy.py / backtest.py, which both use T = dte / 365)."""
+    T = max(T, MIN_T_YEARS)
+    sigma = max(sigma, 1e-4)
+    d1, d2 = _d1_d2(S, K, T, r, sigma)
+    term1 = -(S * norm.pdf(d1) * sigma) / (2 * math.sqrt(T))
+    if option_type == "call":
+        annual_theta = term1 - r * K * math.exp(-r * T) * norm.cdf(d2)
+    else:
+        annual_theta = term1 + r * K * math.exp(-r * T) * norm.cdf(-d2)
+    return annual_theta / 365.0
+
+
 def implied_volatility(
     price: float, S: float, K: float, T: float, r: float, option_type: str
 ) -> float | None:
@@ -58,3 +77,15 @@ def implied_volatility(
         return float(brentq(f, 1e-4, 5.0, maxiter=200))
     except ValueError:
         return None
+
+
+def resolve_implied_vol(
+    quoted_iv, mid_price: float, S: float, K: float, T: float, r: float, option_type: str
+) -> float | None:
+    """Use the chain's quoted IV if it looks sane; otherwise solve it from
+    the mid price. Shared by strategy.py (picking contracts) and
+    positions.py (re-pricing/greeking a held position) so both treat a
+    missing/zero/NaN IV quote the same way."""
+    if quoted_iv is not None and quoted_iv == quoted_iv and quoted_iv > 0:  # NaN check via self-inequality
+        return float(quoted_iv)
+    return implied_volatility(mid_price, S, K, T, r, option_type)

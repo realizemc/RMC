@@ -80,7 +80,16 @@ exits:
   # and always exit before theta decay accelerates near expiration.
   profit_target_pct: 0.60
   stop_loss_pct: 0.50
+  # How the "time to close" trigger decides it's time, regardless of P/L:
+  #   "calendar"  -- close once DTE remaining <= close_by_dte (simple, the
+  #                  same rule for every position no matter its actual decay)
+  #   "theta_pct" -- close once the position's daily time-decay reaches
+  #                  theta_pct_of_value of its current value, no matter the
+  #                  DTE -- an ATM option decaying fast at 20 DTE would
+  #                  trigger sooner than a slow-decaying one still at 8 DTE
+  exit_rule_mode: "calendar"
   close_by_dte: 10
+  theta_pct_of_value: 0.05
 
 data:
   price_history_period: "1y"

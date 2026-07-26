@@ -11,8 +11,10 @@ import uuid
 from dataclasses import asdict, dataclass
 from typing import Optional
 
+from src import data as data_mod
 from src.config import Config
 from src.data import get_option_chain
+from src.options_pricing import bs_theta, resolve_implied_vol
 
 
 @dataclass
@@ -148,10 +150,17 @@ def check_position(cfg: Config, pos: Position) -> dict:
     is_call = "call" in pos.structure
     df = snap.calls if is_call else snap.puts
 
+    option_type = "call" if is_call else "put"
+    S = snap.underlying_price
+    T = max(dte_remaining, 0) / 365.0
+    r = data_mod.RISK_FREE_RATE
+
     long_row = _find_contract_row(df, pos.long_contract_symbol)
     if long_row is None:
         return {"position": pos, "error": "long contract symbol no longer found in chain"}
     long_mid = (float(long_row["bid"]) + float(long_row["ask"])) / 2
+    long_iv = resolve_implied_vol(long_row.get("impliedVolatility"), long_mid, S, pos.long_strike, T, r, option_type)
+    theta_per_share = bs_theta(S, pos.long_strike, T, r, long_iv, option_type) if long_iv else None
 
     current_value = long_mid
     if pos.short_contract_symbol:
@@ -160,18 +169,35 @@ def check_position(cfg: Config, pos: Position) -> dict:
             return {"position": pos, "error": "short contract symbol no longer found in chain"}
         short_mid = (float(short_row["bid"]) + float(short_row["ask"])) / 2
         current_value = long_mid - short_mid
+        short_iv = resolve_implied_vol(short_row.get("impliedVolatility"), short_mid, S, pos.short_strike, T, r, option_type)
+        if theta_per_share is not None and short_iv is not None:
+            # Short leg's decay works FOR you, so it offsets the long leg's.
+            theta_per_share -= bs_theta(S, pos.short_strike, T, r, short_iv, option_type)
 
     current_value_per_contract = current_value * 100
     pnl_pct = (current_value_per_contract - pos.entry_cost_per_contract) / pos.entry_cost_per_contract
     pnl_dollars = (current_value_per_contract - pos.entry_cost_per_contract) * pos.contracts
+
+    theta_per_contract = theta_per_share * 100 if theta_per_share is not None else None
+    theta_pct_of_value = (
+        abs(theta_per_contract) / current_value_per_contract
+        if theta_per_contract is not None and current_value_per_contract > 0 else None
+    )
 
     actions = []
     if pnl_pct >= cfg.exits.profit_target_pct:
         actions.append(f"PROFIT TARGET HIT (+{pnl_pct * 100:.0f}%) -- consider closing")
     if pnl_pct <= -cfg.exits.stop_loss_pct:
         actions.append(f"STOP LOSS HIT ({pnl_pct * 100:.0f}%) -- consider cutting losses")
-    if dte_remaining <= cfg.exits.close_by_dte:
-        actions.append(f"ONLY {dte_remaining} DTE LEFT -- theta decay accelerating, consider closing regardless of P/L")
+
+    if cfg.exits.exit_rule_mode == "theta_pct":
+        if theta_pct_of_value is not None and theta_pct_of_value >= cfg.exits.theta_pct_of_value:
+            actions.append(
+                f"THETA ACCELERATING (losing {theta_pct_of_value * 100:.1f}%/day of value) -- consider closing"
+            )
+    else:
+        if dte_remaining <= cfg.exits.close_by_dte:
+            actions.append(f"ONLY {dte_remaining} DTE LEFT -- theta decay accelerating, consider closing regardless of P/L")
 
     return {
         "position": pos,
@@ -179,6 +205,8 @@ def check_position(cfg: Config, pos: Position) -> dict:
         "current_value_per_contract": current_value_per_contract,
         "pnl_pct": pnl_pct,
         "pnl_dollars": pnl_dollars,
+        "theta_per_contract": theta_per_contract,
+        "theta_pct_of_value": theta_pct_of_value,
         "actions": actions or ["HOLD -- no exit rule triggered"],
     }
 

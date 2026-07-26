@@ -82,6 +82,17 @@ This is not financial advice. Use at your own risk.
    pass `--fill-price` with what you were actually filled at in Robinhood
    for an accurate number, or omit it to use this system's live price as an
    estimate.
+   - **Theta awareness**: every check computes the position's actual daily
+     time decay (Black-Scholes theta, netting the short leg's decay against
+     the long leg's for a spread) and shows it as both $/day and %/day of
+     current value -- not just an abstract DTE countdown.
+   - **`exits.exit_rule_mode`** picks how the "time to close" trigger fires:
+     `"calendar"` (default) closes once DTE remaining <= `close_by_dte`,
+     the same rule for every position regardless of its actual decay rate.
+     `"theta_pct"` instead closes once daily decay reaches
+     `theta_pct_of_value` of the position's current value, so a
+     fast-decaying ATM option can trigger sooner than a slow one still
+     sitting at the same DTE.
 5. **Scorecard** (`src/scorecard.py`, `positions scorecard`) rolls up every
    closed position's realized P/L into a win rate and total $ track record,
    so you can tell if this is actually making money over time instead of
@@ -218,7 +229,7 @@ src/
   config.py            YAML -> dataclasses
   data.py               yfinance wrappers (price history, options chains)
   indicators.py         SMA, RSI, realized volatility, volatility-percentile proxy
-  options_pricing.py     Black-Scholes price/delta/implied-vol
+  options_pricing.py     Black-Scholes price/delta/theta/implied-vol
   strategy.py            Per-ticker signal + contract/spread selection
   position_sizing.py      Risk-based contract sizing for a small account
   screener.py            Runs strategy across the watchlist, applies budget caps

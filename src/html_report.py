@@ -102,7 +102,7 @@ def _position_urgency(check: dict) -> tuple[str, str, str]:
         return "#e3f2fd", "#1565c0", "TAKE PROFIT"
     if "STOP LOSS" in joined:
         return "#ffebee", "#c62828", "CUT LOSS"
-    if "DTE LEFT" in joined:
+    if "DTE LEFT" in joined or "THETA ACCELERATING" in joined:
         return "#fff8e1", "#ef6c00", "TIME EXIT"
     return "#f5f5f5", "#616161", "HOLD"
 
@@ -121,6 +121,12 @@ def _position_row(check: dict) -> str:
             f'<span style="color:{pnl_color};font-weight:700;">{check["pnl_pct"] * 100:+.1f}% '
             f'(${check["pnl_dollars"]:+.2f})</span>'
         )
+        theta = check.get("theta_per_contract")
+        if theta is not None:
+            detail += (
+                f' &nbsp;·&nbsp; <span style="color:{MUTED};">theta ${theta:+.2f}/day '
+                f'({check["theta_pct_of_value"] * 100:.1f}%/day)</span>'
+            )
 
     return f"""
     <div style="{CARD_BORDER}padding:12px 16px;margin-bottom:10px;">

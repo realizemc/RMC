@@ -134,21 +134,7 @@ def cmd_positions_list(args):
 def cmd_positions_check(args):
     cfg = load_config(args.config)
     checks = positions_mod.check_all_open(cfg)
-    if not checks:
-        print("No open positions to check.")
-        return
-    for c in checks:
-        p = c["position"]
-        print(f"\n[{p.id}] {p.contracts}x {p.ticker} {p.structure} {p.expiration}")
-        if "error" in c:
-            print(f"  ERROR: {c['error']}")
-            continue
-        print(f"  DTE remaining : {c['dte_remaining']}")
-        print(f"  Current value/contract: ${c['current_value_per_contract']:.2f} "
-              f"(entry ${p.entry_cost_per_contract:.2f})")
-        print(f"  P/L: {c['pnl_pct'] * 100:+.1f}% (${c['pnl_dollars']:+.2f} total)")
-        for action in c["actions"]:
-            print(f"  -> {action}")
+    print(alerts.format_position_checks(checks))
 
 
 def cmd_positions_close(args):
