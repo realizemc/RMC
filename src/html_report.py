@@ -72,19 +72,25 @@ def _idea_card(result) -> str:
       {legs}
       <table role="presentation" width="100%" style="{FONT}font-size:12px;color:{MUTED};margin-top:10px;border-collapse:collapse;">
         <tr>
-          <td style="padding:2px 0;">Cost/contract</td><td style="text-align:right;color:#1a1a1a;">${idea.cost_per_contract:.2f}</td>
-          <td style="padding:2px 0 2px 16px;">Contracts</td><td style="text-align:right;color:#1a1a1a;">{result.sizing.contracts} (${result.sizing.total_cost:.2f}, {result.sizing.pct_of_portfolio * 100:.0f}%)</td>
+          <td style="padding:2px 0;">Cost/contract</td><td style="padding:2px 0;text-align:right;color:#1a1a1a;">${idea.cost_per_contract:.2f}</td>
         </tr>
         <tr>
-          <td style="padding:2px 0;">Max loss</td><td style="text-align:right;color:#c62828;">${idea.max_loss_per_contract:.2f}</td>
-          <td style="padding:2px 0 2px 16px;">Max profit</td><td style="text-align:right;color:#2e7d32;">{max_profit}</td>
+          <td style="padding:2px 0;">Contracts</td><td style="padding:2px 0;text-align:right;color:#1a1a1a;">{result.sizing.contracts} (${result.sizing.total_cost:.2f}, {result.sizing.pct_of_portfolio * 100:.0f}%)</td>
         </tr>
         <tr>
-          <td style="padding:2px 0;">Breakeven</td><td style="text-align:right;color:#1a1a1a;">${idea.breakeven:.2f}</td>
-          <td style="padding:2px 0 2px 16px;">DTE</td><td style="text-align:right;color:#1a1a1a;">{idea.dte}</td>
+          <td style="padding:2px 0;">Max loss</td><td style="padding:2px 0;text-align:right;color:#c62828;">${idea.max_loss_per_contract:.2f}</td>
         </tr>
         <tr>
-          <td style="padding:2px 0;">Setup confidence</td><td style="text-align:right;color:#1a1a1a;" colspan="3">{idea.confidence * 100:.0f}% (scales size, not a win-probability)</td>
+          <td style="padding:2px 0;">Max profit</td><td style="padding:2px 0;text-align:right;color:#2e7d32;">{max_profit}</td>
+        </tr>
+        <tr>
+          <td style="padding:2px 0;">Breakeven</td><td style="padding:2px 0;text-align:right;color:#1a1a1a;">${idea.breakeven:.2f}</td>
+        </tr>
+        <tr>
+          <td style="padding:2px 0;">DTE</td><td style="padding:2px 0;text-align:right;color:#1a1a1a;">{idea.dte}</td>
+        </tr>
+        <tr>
+          <td style="padding:2px 0;">Setup confidence</td><td style="padding:2px 0;text-align:right;color:#1a1a1a;">{idea.confidence * 100:.0f}% (scales size, not a win-probability)</td>
         </tr>
       </table>
       <div style="{FONT}font-size:11px;color:{MUTED};margin-top:8px;font-style:italic;">{_esc(idea.rationale)}</div>
