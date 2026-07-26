@@ -37,6 +37,7 @@ class StrategyConfig:
     min_open_interest: int
     min_volume: int
     max_bid_ask_spread_pct: float
+    avoid_earnings: bool
 
 
 @dataclass

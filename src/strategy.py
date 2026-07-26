@@ -10,6 +10,7 @@ This module never talks to a broker. It produces `TradeIdea` objects that
 """
 from __future__ import annotations
 
+import datetime as dt
 import math
 from dataclasses import dataclass, field
 from typing import Optional
@@ -169,6 +170,15 @@ def evaluate_ticker(ticker: str, cfg: Config) -> tuple[Optional[TradeIdea], str]
 
     if chosen_snapshot is None:
         return None, "could not load an options chain for any candidate expiration"
+
+    if cfg.strategy.avoid_earnings:
+        exp_date = dt.datetime.strptime(chosen_exp, "%Y-%m-%d").date()
+        earnings_date = data_mod.get_next_earnings_date(ticker)
+        if earnings_date is not None and dt.date.today() <= earnings_date <= exp_date:
+            return None, (
+                f"earnings expected {earnings_date} falls before expiration {chosen_exp} "
+                f"-- avoiding IV-crush risk"
+            )
 
     option_type = _option_type_for_direction(trend)
     df = chosen_snapshot.calls if option_type == "call" else chosen_snapshot.puts

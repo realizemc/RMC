@@ -57,6 +57,11 @@ strategy:
   min_open_interest: 100
   min_volume: 10
   max_bid_ask_spread_pct: 0.15
+  # Skip a trade if the underlying's next earnings report is expected to
+  # land before the option expires -- a long option bought into earnings
+  # is exposed to a same-day IV crush that can wipe out the premium even
+  # if the direction call turns out right.
+  avoid_earnings: true
 
 exits:
   # Classic long-premium risk management: take profit early, cut losses hard,

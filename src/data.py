@@ -81,6 +81,27 @@ def get_option_chain(ticker: str, expiration: str, underlying_price: Optional[fl
     )
 
 
+def get_next_earnings_date(ticker: str) -> Optional[dt.date]:
+    """Earliest known/estimated upcoming earnings date, or None if unknown.
+
+    Yahoo's calendar data is itself an estimate (sometimes a date range),
+    so we take the earliest date as the conservative bound for "don't hold
+    a long option through this."
+    """
+    try:
+        calendar = yf.Ticker(ticker).calendar
+    except Exception:
+        return None
+    if not calendar:
+        return None
+    dates = calendar.get("Earnings Date")
+    if not dates:
+        return None
+    today = dt.date.today()
+    future_dates = [d for d in dates if d >= today]
+    return min(future_dates) if future_dates else None
+
+
 def expirations_in_dte_window(ticker: str, min_dte: int, max_dte: int) -> list:
     """Return expiration date strings whose DTE falls in [min_dte, max_dte]."""
     today = dt.date.today()

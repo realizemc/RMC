@@ -6,7 +6,8 @@
   python main.py positions add IDX     -- start tracking idea #IDX from the last scan
   python main.py positions list        -- show tracked positions
   python main.py positions check       -- get hold/close guidance on open positions
-  python main.py positions close ID    -- mark a position closed
+  python main.py positions close ID    -- mark a position closed (records realized P/L)
+  python main.py positions scorecard   -- realized P/L summary across all closed positions
 
 This system NEVER places, modifies, or cancels a real order. It reads
 market data and tells you what it thinks. You pull the trigger in Robinhood.
@@ -16,7 +17,8 @@ from __future__ import annotations
 import argparse
 import sys
 
-from src import alerts, backtest as backtest_mod, positions as positions_mod
+from src import alerts, backtest as backtest_mod, iv_history, positions as positions_mod
+from src import scorecard as scorecard_mod
 from src.config import load_config
 from src.daily import run_daily
 from src.screener import run_screen
@@ -49,6 +51,8 @@ def cmd_scan(args):
     if cfg.alerts.write_markdown:
         md_path = alerts.write_markdown_report(results, reasons, cfg)
         print(f"Markdown report: {md_path}")
+
+    iv_history.log_daily_snapshot(cfg)
 
 
 def cmd_daily(args):
@@ -101,9 +105,12 @@ def cmd_positions_list(args):
         print("No tracked positions.")
         return
     for p in pos_list:
-        print(f"[{p.id}] {p.status:6s} {p.contracts}x {p.ticker} {p.structure} "
-              f"{p.expiration} strike(s) {p.long_strike}/{p.short_strike or '-'} "
-              f"entry ${p.entry_cost_per_contract:.2f} opened {p.entry_date}")
+        line = (f"[{p.id}] {p.status:6s} {p.contracts}x {p.ticker} {p.structure} "
+                f"{p.expiration} strike(s) {p.long_strike}/{p.short_strike or '-'} "
+                f"entry ${p.entry_cost_per_contract:.2f} opened {p.entry_date}")
+        if p.status == "closed" and p.realized_pnl_dollars is not None:
+            line += f" | closed {p.close_date} P/L ${p.realized_pnl_dollars:+.2f} ({p.exit_source})"
+        print(line)
 
 
 def cmd_positions_check(args):
@@ -128,8 +135,25 @@ def cmd_positions_check(args):
 
 def cmd_positions_close(args):
     cfg = load_config(args.config)
-    ok = positions_mod.close_position(cfg, args.id, note=args.note or "")
-    print("Closed." if ok else f"No open position found with id {args.id}")
+    ok = positions_mod.close_position(
+        cfg, args.id, note=args.note or "", fill_price_per_contract=args.fill_price,
+    )
+    if not ok:
+        print(f"No open position found with id {args.id}")
+        return
+    pos = next(p for p in positions_mod.load_positions(cfg) if p.id == args.id)
+    if pos.realized_pnl_dollars is not None:
+        print(f"Closed. Realized P/L: ${pos.realized_pnl_dollars:+.2f} "
+              f"({pos.realized_pnl_pct * 100:+.1f}%, priced via {pos.exit_source})")
+    else:
+        print("Closed. No exit price recorded (chain unavailable and no --fill-price given), "
+              "so this trade won't count toward the scorecard.")
+
+
+def cmd_positions_scorecard(args):
+    cfg = load_config(args.config)
+    sc = scorecard_mod.compute_scorecard(cfg)
+    print(scorecard_mod.summarize(sc, starting_capital=cfg.account.portfolio_value))
 
 
 def build_parser():
@@ -169,7 +193,16 @@ def build_parser():
     p_pos_close = pos_sub.add_parser("close", help="Mark a tracked position closed")
     p_pos_close.add_argument("id", type=str)
     p_pos_close.add_argument("--note", type=str, default=None)
+    p_pos_close.add_argument(
+        "--fill-price", dest="fill_price", type=float, default=None,
+        help="What you actually got filled at in Robinhood, total $ per contract "
+             "(e.g. 82.00 for a $0.82 premium). Omit to use this system's live model "
+             "price as an estimate.",
+    )
     p_pos_close.set_defaults(func=cmd_positions_close)
+
+    p_pos_scorecard = pos_sub.add_parser("scorecard", help="Realized P/L summary across all closed positions")
+    p_pos_scorecard.set_defaults(func=cmd_positions_scorecard)
 
     return p
 

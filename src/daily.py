@@ -10,7 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from src import alerts
+from src import iv_history
 from src import positions as positions_mod
+from src import scorecard as scorecard_mod
 from src.config import Config
 from src.notifier import NotifierError, send_email
 from src.screener import run_screen
@@ -36,6 +38,7 @@ def run_daily(cfg: Config, verbose: bool = False) -> DailyResult:
     csv_path = alerts.append_csv_log(results, cfg)
     scan_path = alerts.save_last_scan(results, cfg)
     md_path = alerts.write_markdown_report(results, reasons, cfg) if cfg.alerts.write_markdown else None
+    iv_history.log_daily_snapshot(cfg)
 
     position_checks = []
     if cfg.notifications.include_position_checks:
@@ -44,6 +47,13 @@ def run_daily(cfg: Config, verbose: bool = False) -> DailyResult:
     body_parts = ["=== NEW TRADE IDEAS ===", alerts.format_console(results)]
     if cfg.notifications.include_position_checks:
         body_parts += ["", "=== OPEN POSITION CHECKS ===", alerts.format_position_checks(position_checks)]
+
+    sc = scorecard_mod.compute_scorecard(cfg)
+    if sc.total_closed:
+        body_parts += [
+            "", "=== TRACK RECORD ===",
+            scorecard_mod.summarize(sc, starting_capital=cfg.account.portfolio_value),
+        ]
     body = "\n".join(body_parts)
 
     if results:

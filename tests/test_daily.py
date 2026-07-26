@@ -27,6 +27,11 @@ class TestDaily(unittest.TestCase):
         self.cfg = load_config(DEFAULT_CONFIG_PATH)
         self.cfg.alerts.log_dir = self.tmp_dir
         self.cfg.data.cache_dir = self.tmp_dir
+        # Real IV-history logging hits the network per watchlist ticker;
+        # keep these tests offline and focused on email/report logic.
+        iv_patcher = patch("src.iv_history.log_daily_snapshot", return_value="fake_iv_path")
+        iv_patcher.start()
+        self.addCleanup(iv_patcher.stop)
 
     def tearDown(self):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)

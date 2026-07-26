@@ -5,12 +5,15 @@ Important limitations, read before trusting the numbers:
     MODELED with Black-Scholes using (historical realized vol * a small
     multiplier) as a stand-in for implied vol. Real option prices reflect
     skew, term structure, and demand that this doesn't capture.
-  - Only the plain long-call/long-put case is modeled (not debit spreads),
-    since spread economics depend heavily on the vol surface, which we're
-    already approximating.
+  - Debit spreads ARE modeled (same cost-based fallback as the live
+    strategy), but both legs are priced off the same modeled flat vol,
+    which understates real-world skew between the two strikes.
   - Fills are at the model's mid price with no slippage or commissions.
   - Trend/RSI/volatility-percentile signals ARE the real, exact functions
     used by the live screener, just evaluated on historical data.
+  - Earnings-date avoidance is NOT modeled here (unlike the live strategy)
+    -- historical earnings-calendar data isn't wired in, so the backtest
+    may hold positions through earnings that the live system would skip.
 
 Treat results as "does this entry logic have positive expectancy", not
 "this is what your account would have actually done."

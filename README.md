@@ -51,6 +51,10 @@ This is not financial advice. Use at your own risk.
    - If a single contract costs more than your per-trade budget, it
      automatically converts the idea into a debit spread (buy that contract,
      sell a further-OTM one) to bring the cost down.
+   - Skips the trade if the underlying's next earnings report is expected
+     to land before the option expires (`strategy.avoid_earnings`) -- a
+     long option held through earnings is exposed to an IV crush that can
+     erase the premium even when the direction call is right.
 2. **Position sizing** (`src/position_sizing.py`) caps each idea at
    `max_risk_per_trade_pct` of your account (or `max_trade_cost_usd`,
    whichever is smaller), and never recommends more than
@@ -61,16 +65,32 @@ This is not financial advice. Use at your own risk.
 4. **Position tracking** (`src/positions.py`) lets you tell the system
    "I took idea #2," and later ask it "should I close this?" -- it re-prices
    your specific contract(s) against the live chain and applies profit
-   target / stop loss / time-based exit rules from `config.yaml`.
-5. **Backtester** (`src/backtest.py`) replays the *exact* signal logic
+   target / stop loss / time-based exit rules from `config.yaml`. Closing a
+   position (`positions close`) records what it actually made or lost --
+   pass `--fill-price` with what you were actually filled at in Robinhood
+   for an accurate number, or omit it to use this system's live price as an
+   estimate.
+5. **Scorecard** (`src/scorecard.py`, `positions scorecard`) rolls up every
+   closed position's realized P/L into a win rate and total $ track record,
+   so you can tell if this is actually making money over time instead of
+   just eyeballing individual trades.
+6. **Backtester** (`src/backtest.py`) replays the *exact* signal logic
    against historical prices, using Black-Scholes with realized volatility
    as a modeled stand-in for option prices (see the caveats in that file's
    docstring -- it's a sanity check on the entry logic, not a promise).
-6. **Daily email** (`src/daily.py` + `src/notifier.py`) runs the scan and
-   (optionally) position checks together and emails you the combined report
-   via Gmail SMTP. Nothing about email changes what the system does --
-   it's the same output as `scan` / `positions check`, just delivered
+7. **Daily email** (`src/daily.py` + `src/notifier.py`) runs the scan,
+   position checks, and scorecard together and emails you the combined
+   report via Gmail SMTP. Nothing about email changes what the system does
+   -- it's the same output as the individual commands, just delivered
    instead of printed.
+8. **IV history logging** (`src/iv_history.py`) quietly records the real,
+   observed at-the-money implied volatility for every watchlist ticker on
+   every `scan`/`daily` run, into `data_cache/iv_history.csv`. This exists
+   because the volatility filter above is a realized-volatility PROXY for
+   IV rank (no free source of historical IV exists) -- after a few months
+   of this accumulating, that CSV could be used to compute a real IV
+   percentile instead of the proxy. That swap isn't implemented yet; this
+   is just laying the groundwork by collecting the data now.
 
 ## Setup
 
@@ -130,7 +150,8 @@ Track a trade after you've actually placed it in Robinhood:
 python main.py positions add 0        # tracks idea #0 from the last scan
 python main.py positions list
 python main.py positions check        # tells you HOLD / take profit / cut loss / time exit
-python main.py positions close <id> --note "closed for +60%"
+python main.py positions close <id> --fill-price 88.00 --note "closed for +60%"
+python main.py positions scorecard    # realized win rate / total P/L across closed trades
 ```
 
 Backtest the strategy logic before trusting it with real money:
@@ -166,13 +187,16 @@ src/
   position_sizing.py      Risk-based contract sizing for a small account
   screener.py            Runs strategy across the watchlist, applies budget caps
   alerts.py               Console/CSV/markdown output
-  positions.py            Manual trade tracking + exit-rule checks
+  positions.py            Manual trade tracking + realized P/L on close
+  scorecard.py            Rolls up closed positions into a win-rate/P&L track record
   backtest.py             Historical signal backtest (modeled option prices)
-  daily.py                Combines scan + position checks into one emailed report
+  daily.py                Combines scan + position checks + scorecard into one emailed report
   notifier.py             Gmail SMTP sending (credentials via env vars only)
-tests/                  Unit tests for indicators, pricing, sizing, notifier, daily,
-                        plus an end-to-end synthetic-data integration test
+  iv_history.py           Logs real chain IV daily for a future real IV-rank upgrade
+tests/                  Unit tests for every module above, plus an end-to-end
+                        synthetic-data integration test
 logs/                   CSV log, markdown reports, tracked positions (gitignored)
+data_cache/             Price/chain caching + iv_history.csv (gitignored)
 ```
 
 ## Automating it (no need to keep your computer on)

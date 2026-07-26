@@ -82,7 +82,8 @@ class TestSyntheticPipeline(unittest.TestCase):
     def test_screener_produces_a_sized_idea_from_synthetic_bullish_ticker(self):
         with patch("src.data.get_price_history", return_value=self.history), \
              patch("src.data.expirations_in_dte_window", return_value=[self.expiration]), \
-             patch("src.data.get_option_chain", side_effect=self._snapshot):
+             patch("src.data.get_option_chain", side_effect=self._snapshot), \
+             patch("src.data.get_next_earnings_date", return_value=None):
 
             results, reasons = run_screen(self.cfg, verbose=False)
 
@@ -98,6 +99,30 @@ class TestSyntheticPipeline(unittest.TestCase):
         text = alerts.format_console(results)
         self.assertIn("FAKEUP", text)
         self.assertIn("BUY", text)
+
+    def test_earnings_before_expiration_blocks_the_trade(self):
+        earnings_date = dt.date.today() + dt.timedelta(days=10)  # inside the 35 DTE window
+        with patch("src.data.get_price_history", return_value=self.history), \
+             patch("src.data.expirations_in_dte_window", return_value=[self.expiration]), \
+             patch("src.data.get_option_chain", side_effect=self._snapshot), \
+             patch("src.data.get_next_earnings_date", return_value=earnings_date):
+
+            results, reasons = run_screen(self.cfg, verbose=False)
+
+        self.assertEqual(results, [])
+        self.assertIn("earnings", reasons["FAKEUP"])
+
+    def test_earnings_after_expiration_does_not_block_the_trade(self):
+        earnings_date = dt.date.today() + dt.timedelta(days=60)  # after the 35 DTE expiration
+        with patch("src.data.get_price_history", return_value=self.history), \
+             patch("src.data.expirations_in_dte_window", return_value=[self.expiration]), \
+             patch("src.data.get_option_chain", side_effect=self._snapshot), \
+             patch("src.data.get_next_earnings_date", return_value=earnings_date):
+
+            results, reasons = run_screen(self.cfg, verbose=False)
+
+        self.assertEqual(reasons["FAKEUP"], "ok")
+        self.assertEqual(len(results), 1)
 
     def test_screener_returns_nothing_when_trend_is_flat(self):
         flat = pd.DataFrame(

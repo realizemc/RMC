@@ -31,6 +31,10 @@ class Position:
     status: str = "open"       # 'open' | 'closed'
     close_date: Optional[str] = None
     close_note: Optional[str] = None
+    exit_value_per_contract: Optional[float] = None
+    exit_source: Optional[str] = None   # 'manual fill price' | 'live model estimate'
+    realized_pnl_dollars: Optional[float] = None
+    realized_pnl_pct: Optional[float] = None
 
 
 def _positions_path(cfg: Config) -> str:
@@ -77,15 +81,46 @@ def add_position_from_scan(cfg: Config, scan: dict, idea_index: int, contracts: 
     return pos
 
 
-def close_position(cfg: Config, position_id: str, note: str = "") -> bool:
+def close_position(
+    cfg: Config,
+    position_id: str,
+    note: str = "",
+    fill_price_per_contract: Optional[float] = None,
+) -> bool:
+    """Marks a position closed and records realized P/L.
+
+    `fill_price_per_contract` should be what you actually got filled at in
+    Robinhood (same units as entry_cost_per_contract: total $ per contract,
+    e.g. 82.00 for a $0.82 premium). If omitted, falls back to this
+    system's live model price as an estimate -- less accurate than a real
+    fill, but better than no P/L data at all.
+    """
     positions = load_positions(cfg)
     for p in positions:
-        if p.id == position_id:
-            p.status = "closed"
-            p.close_date = dt.date.today().isoformat()
-            p.close_note = note
-            save_positions(cfg, positions)
-            return True
+        if p.id != position_id:
+            continue
+
+        exit_value, source = fill_price_per_contract, "manual fill price"
+        if exit_value is None:
+            check = check_position(cfg, p)
+            if "error" not in check:
+                exit_value = check["current_value_per_contract"]
+                source = "live model estimate"
+
+        if exit_value is not None:
+            p.exit_value_per_contract = exit_value
+            p.exit_source = source
+            p.realized_pnl_dollars = (exit_value - p.entry_cost_per_contract) * p.contracts
+            p.realized_pnl_pct = (
+                (exit_value - p.entry_cost_per_contract) / p.entry_cost_per_contract
+                if p.entry_cost_per_contract else None
+            )
+
+        p.status = "closed"
+        p.close_date = dt.date.today().isoformat()
+        p.close_note = note
+        save_positions(cfg, positions)
+        return True
     return False
 
 
