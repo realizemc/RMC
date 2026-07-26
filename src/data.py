@@ -10,12 +10,31 @@ from dataclasses import dataclass
 from typing import Optional
 
 import pandas as pd
+import requests
 import yfinance as yf
 
 # Approximate short-term risk-free rate used for Black-Scholes / delta calcs.
 # Not fetched live -- it's a minor input for near-dated options, hardcoding
 # is fine and avoids another network dependency. Update occasionally.
 RISK_FREE_RATE = 0.045
+
+# yfinance defaults to curl_cffi (TLS-fingerprint spoofing, mimicking a real
+# browser's handshake) to dodge Yahoo's bot detection. That doesn't survive
+# some TLS-intercepting proxies -- the handshake gets reset even though a
+# plain HTTPS request through the same proxy works fine. Passing an explicit
+# plain `requests` session forces yfinance onto the path that actually works
+# here, regardless of whether curl_cffi happens to be installed.
+_SESSION = requests.Session()
+_SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+})
+
+
+def _ticker(symbol: str) -> yf.Ticker:
+    return yf.Ticker(symbol, session=_SESSION)
 
 
 @dataclass
@@ -31,7 +50,7 @@ class OptionChainSnapshot:
 def get_price_history(ticker: str, period: str = "1y") -> pd.DataFrame:
     """Daily OHLCV history for `ticker`. Returns empty DataFrame on failure."""
     try:
-        hist = yf.Ticker(ticker).history(period=period, auto_adjust=True)
+        hist = _ticker(ticker).history(period=period, auto_adjust=True)
     except Exception:
         return pd.DataFrame()
     if hist is None or hist.empty:
@@ -50,14 +69,14 @@ def get_current_price(ticker: str, history: Optional[pd.DataFrame] = None) -> Op
 
 def list_expirations(ticker: str) -> list:
     try:
-        return list(yf.Ticker(ticker).options)
+        return list(_ticker(ticker).options)
     except Exception:
         return []
 
 
 def get_option_chain(ticker: str, expiration: str, underlying_price: Optional[float] = None) -> Optional[OptionChainSnapshot]:
     """Fetch the calls/puts chain for one expiration date (YYYY-MM-DD)."""
-    tk = yf.Ticker(ticker)
+    tk = _ticker(ticker)
     try:
         chain = tk.option_chain(expiration)
     except Exception:
@@ -89,7 +108,7 @@ def get_next_earnings_date(ticker: str) -> Optional[dt.date]:
     a long option through this."
     """
     try:
-        calendar = yf.Ticker(ticker).calendar
+        calendar = _ticker(ticker).calendar
     except Exception:
         return None
     if not calendar:
