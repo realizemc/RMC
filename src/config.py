@@ -59,6 +59,14 @@ class AlertsConfig:
 
 
 @dataclass
+class NotificationsConfig:
+    enabled: bool
+    to_email: str
+    include_position_checks: bool
+    send_on_empty: bool
+
+
+@dataclass
 class Config:
     account: AccountConfig
     watchlist: list
@@ -66,6 +74,7 @@ class Config:
     exits: ExitsConfig
     data: DataConfig
     alerts: AlertsConfig
+    notifications: NotificationsConfig
     path: str = field(default=DEFAULT_CONFIG_PATH)
 
 
@@ -80,6 +89,7 @@ def load_config(path: str = DEFAULT_CONFIG_PATH) -> Config:
         exits=ExitsConfig(**raw["exits"]),
         data=DataConfig(**raw["data"]),
         alerts=AlertsConfig(**raw["alerts"]),
+        notifications=NotificationsConfig(**raw["notifications"]),
         path=path,
     )
 

@@ -66,6 +66,11 @@ This is not financial advice. Use at your own risk.
    against historical prices, using Black-Scholes with realized volatility
    as a modeled stand-in for option prices (see the caveats in that file's
    docstring -- it's a sanity check on the entry logic, not a promise).
+6. **Daily email** (`src/daily.py` + `src/notifier.py`) runs the scan and
+   (optionally) position checks together and emails you the combined report
+   via Gmail SMTP. Nothing about email changes what the system does --
+   it's the same output as `scan` / `positions check`, just delivered
+   instead of printed.
 
 ## Setup
 
@@ -76,8 +81,38 @@ pip install -r requirements.txt
 Edit `config.yaml`:
 - `account.portfolio_value` -- set this to your actual account size.
 - `watchlist` -- liquid, optionable tickers you actually want exposure to.
+- `notifications.to_email` -- where the daily report gets sent.
 - Everything else has reasonable defaults; tune `strategy.*` and `exits.*`
   once you've read `src/strategy.py` and understand what each knob does.
+
+### Email setup
+
+Emailing is done via Gmail SMTP. Credentials are **never** stored in this
+repo, `config.yaml`, or anywhere in git -- they're read from two environment
+variables at send time:
+
+1. Turn on 2-Step Verification on the sending Gmail account (required for
+   the next step): https://myaccount.google.com/security
+2. Generate an App Password: https://myaccount.google.com/apppasswords
+   (choose "Mail" / "Other" as the app -- it gives you a 16-character code,
+   different from your normal Gmail password).
+3. Set these two environment variables wherever the script actually runs:
+   ```bash
+   export GMAIL_SENDER_ADDRESS="youraddress@gmail.com"
+   export GMAIL_APP_PASSWORD="the16charapppassword"
+   ```
+   It's fine (and normal) for the sender and `notifications.to_email` to be
+   the same address -- you're emailing yourself a report.
+   - **Running this on your own computer**: put those two `export` lines in
+     your shell profile (`~/.zshrc`, `~/.bashrc`) or a local `.env` you
+     `source` before running, and never commit that file.
+   - **Running as a scheduled cloud job** (see below): set them as
+     persistent environment variables on the Claude Code environment
+     itself (not typed into any chat), so every scheduled run can see them.
+
+If the environment variables aren't set, `python main.py daily` still runs
+the full scan and prints/logs everything -- it just tells you the email was
+skipped, instead of failing.
 
 ## Usage
 
@@ -104,6 +139,13 @@ Backtest the strategy logic before trusting it with real money:
 python main.py backtest --years 3
 ```
 
+Run the scan + position checks together and email yourself the combined
+report (this is what a scheduled/automated run should call):
+
+```bash
+python main.py daily
+```
+
 ## Testing
 
 ```bash
@@ -126,6 +168,20 @@ src/
   alerts.py               Console/CSV/markdown output
   positions.py            Manual trade tracking + exit-rule checks
   backtest.py             Historical signal backtest (modeled option prices)
-tests/                  Unit tests for indicators, pricing, and sizing
+  daily.py                Combines scan + position checks into one emailed report
+  notifier.py             Gmail SMTP sending (credentials via env vars only)
+tests/                  Unit tests for indicators, pricing, sizing, notifier, daily,
+                        plus an end-to-end synthetic-data integration test
 logs/                   CSV log, markdown reports, tracked positions (gitignored)
 ```
+
+## Automating it (no need to keep your computer on)
+
+If you're running this via Claude Code's cloud environment, a scheduled
+Routine can run `python main.py daily` automatically every weekday morning
+and email you the report without your laptop needing to be on. That
+requires the `GMAIL_SENDER_ADDRESS` / `GMAIL_APP_PASSWORD` environment
+variables to be set at the **environment** level (persists across scheduled
+runs) rather than typed into a chat -- see
+https://code.claude.com/docs/en/claude-code-on-the-web for how environment
+configuration works.

@@ -73,3 +73,13 @@ alerts:
   log_dir: "logs"
   # Also write a markdown daily report in addition to the CSV log.
   write_markdown: true
+
+notifications:
+  enabled: true
+  to_email: "mattc423542@gmail.com"
+  # Include hold/take-profit/stop-loss/time-exit guidance on tracked open
+  # positions in the same daily email as the new-idea scan.
+  include_position_checks: true
+  # Send an email even on days with no new ideas and no open positions
+  # (otherwise you only hear from it when there's something to look at).
+  send_on_empty: false

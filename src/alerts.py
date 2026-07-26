@@ -110,6 +110,28 @@ def format_console(results: list[ScreenResult]) -> str:
     return "\n".join(lines)
 
 
+def format_position_checks(checks: list[dict]) -> str:
+    if not checks:
+        return "No open tracked positions."
+
+    lines = []
+    for c in checks:
+        p = c["position"]
+        lines.append(f"\n[{p.id}] {p.contracts}x {p.ticker} {p.structure} {p.expiration}")
+        if "error" in c:
+            lines.append(f"  ERROR: {c['error']}")
+            continue
+        lines.append(f"  DTE remaining : {c['dte_remaining']}")
+        lines.append(
+            f"  Current value/contract: ${c['current_value_per_contract']:.2f} "
+            f"(entry ${p.entry_cost_per_contract:.2f})"
+        )
+        lines.append(f"  P/L: {c['pnl_pct'] * 100:+.1f}% (${c['pnl_dollars']:+.2f} total)")
+        for action in c["actions"]:
+            lines.append(f"  -> {action}")
+    return "\n".join(lines)
+
+
 def write_markdown_report(results: list[ScreenResult], reasons: dict, cfg: Config) -> str:
     today = dt.date.today().isoformat()
     path = os.path.join(cfg.alerts.log_dir, f"report_{today}.md")

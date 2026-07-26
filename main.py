@@ -18,6 +18,7 @@ import sys
 
 from src import alerts, backtest as backtest_mod, positions as positions_mod
 from src.config import load_config
+from src.daily import run_daily
 from src.screener import run_screen
 
 DISCLAIMER = (
@@ -48,6 +49,24 @@ def cmd_scan(args):
     if cfg.alerts.write_markdown:
         md_path = alerts.write_markdown_report(results, reasons, cfg)
         print(f"Markdown report: {md_path}")
+
+
+def cmd_daily(args):
+    cfg = load_config(args.config)
+    print(DISCLAIMER)
+    result = run_daily(cfg, verbose=args.verbose)
+    print(result.body)
+    print(f"\nLogged to {result.csv_path}")
+    print(f"Saved scan snapshot to {result.scan_path}")
+    if result.md_path:
+        print(f"Markdown report: {result.md_path}")
+
+    if not result.email_attempted:
+        print("\nEmail not sent (nothing to report and send_on_empty is false).")
+    elif result.email_sent:
+        print(f"\nEmailed report to {cfg.notifications.to_email}")
+    else:
+        print(f"\nEmail NOT sent: {result.email_error}")
 
 
 def cmd_backtest(args):
@@ -121,6 +140,10 @@ def build_parser():
     p_scan = sub.add_parser("scan", help="Run today's screen and print/log trade ideas")
     p_scan.add_argument("--verbose", action="store_true", help="Print skip reasons for every ticker")
     p_scan.set_defaults(func=cmd_scan)
+
+    p_daily = sub.add_parser("daily", help="Run scan + position checks and email the combined report")
+    p_daily.add_argument("--verbose", action="store_true", help="Print skip reasons for every ticker")
+    p_daily.set_defaults(func=cmd_daily)
 
     p_bt = sub.add_parser("backtest", help="Backtest the strategy's signal logic")
     p_bt.add_argument("--years", type=int, default=3)
