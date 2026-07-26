@@ -88,3 +88,80 @@ notifications:
   # Send an email even on days with no new ideas and no open positions
   # (otherwise you only hear from it when there's something to look at).
   send_on_empty: false
+
+most_active:
+  # `python main.py hot` ranks this universe by today's near-term options
+  # volume and shows the top N. This is a SEPARATE list from `watchlist`
+  # above -- it's for discovery, not trading. There's no free market-wide
+  # "most active options" feed, so this is an approximation: options volume
+  # summed across the nearest expiration only, for a curated list of
+  # liquid names, not a literal whole-market ranking.
+  top_n: 10
+  universe:
+    - SPY
+    - QQQ
+    - IWM
+    - DIA
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - META
+    - NVDA
+    - TSLA
+    - AMD
+    - NFLX
+    - AVGO
+    - CRM
+    - ORCL
+    - ADBE
+    - MU
+    - QCOM
+    - TXN
+    - SOFI
+    - PLTR
+    - RIVN
+    - NIO
+    - F
+    - AAL
+    - INTC
+    - PLUG
+    - SIRI
+    - T
+    - GME
+    - AMC
+    - COIN
+    - MARA
+    - RIOT
+    - LCID
+    - CHPT
+    - BAC
+    - WFC
+    - JPM
+    - C
+    - GS
+    - DIS
+    - BA
+    - XOM
+    - CVX
+    - PYPL
+    - SQ
+    - SNAP
+    - UBER
+    - LYFT
+    - ABNB
+    - SBUX
+    - NKE
+    - WMT
+    - KO
+    - PEP
+    - MCD
+    - V
+    - MA
+    - JNJ
+    - PFE
+    - MRNA
+    - BABA
+    - JD
+    - XPEV
+    - LI

@@ -68,6 +68,12 @@ class NotificationsConfig:
 
 
 @dataclass
+class MostActiveConfig:
+    top_n: int
+    universe: list
+
+
+@dataclass
 class Config:
     account: AccountConfig
     watchlist: list
@@ -76,6 +82,7 @@ class Config:
     data: DataConfig
     alerts: AlertsConfig
     notifications: NotificationsConfig
+    most_active: MostActiveConfig
     path: str = field(default=DEFAULT_CONFIG_PATH)
 
 
@@ -91,6 +98,7 @@ def load_config(path: str = DEFAULT_CONFIG_PATH) -> Config:
         data=DataConfig(**raw["data"]),
         alerts=AlertsConfig(**raw["alerts"]),
         notifications=NotificationsConfig(**raw["notifications"]),
+        most_active=MostActiveConfig(**raw["most_active"]),
         path=path,
     )
 

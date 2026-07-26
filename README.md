@@ -91,6 +91,15 @@ This is not financial advice. Use at your own risk.
    of this accumulating, that CSV could be used to compute a real IV
    percentile instead of the proxy. That swap isn't implemented yet; this
    is just laying the groundwork by collecting the data now.
+9. **Most-active discovery** (`src/most_active.py`, `python main.py hot`)
+   ranks a separate, curated universe of ~70 liquid names
+   (`most_active.universe` in `config.yaml`) by today's near-term options
+   volume, to help you spot activity outside your fixed 10-ticker
+   watchlist. This is NOT a whole-market ranking -- there's no free feed
+   for that -- it's call+put volume at the nearest expiration only, for
+   names you've told it to watch. Anything interesting it surfaces can be
+   checked against the real strategy with `scan --tickers TICKER1,TICKER2`
+   without touching your permanent watchlist.
 
 ## Setup
 
@@ -144,6 +153,14 @@ chain):
 python main.py scan
 ```
 
+Discover activity outside your watchlist, and spot-check any of it against
+the real strategy without editing `config.yaml`:
+
+```bash
+python main.py hot                          # top 10 by today's near-term options volume
+python main.py scan --tickers NVDA,AMD      # one-off check, doesn't touch your watchlist
+```
+
 Track a trade after you've actually placed it in Robinhood:
 
 ```bash
@@ -193,6 +210,7 @@ src/
   daily.py                Combines scan + position checks + scorecard into one emailed report
   notifier.py             Gmail SMTP sending (credentials via env vars only)
   iv_history.py           Logs real chain IV daily for a future real IV-rank upgrade
+  most_active.py          `hot` command: ranks a curated universe by options volume
 tests/                  Unit tests for every module above, plus an end-to-end
                         synthetic-data integration test
 logs/                   CSV log, markdown reports, tracked positions (gitignored)

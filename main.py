@@ -8,6 +8,7 @@
   python main.py positions check       -- get hold/close guidance on open positions
   python main.py positions close ID    -- mark a position closed (records realized P/L)
   python main.py positions scorecard   -- realized P/L summary across all closed positions
+  python main.py hot                   -- rank a curated universe by today's options activity
 
 This system NEVER places, modifies, or cancels a real order. It reads
 market data and tells you what it thinks. You pull the trigger in Robinhood.
@@ -18,6 +19,7 @@ import argparse
 import sys
 
 from src import alerts, backtest as backtest_mod, iv_history, positions as positions_mod
+from src import most_active as most_active_mod
 from src import scorecard as scorecard_mod
 from src.config import load_config
 from src.daily import run_daily
@@ -34,6 +36,10 @@ DISCLAIMER = (
 
 def cmd_scan(args):
     cfg = load_config(args.config)
+    ad_hoc = bool(args.tickers)
+    if ad_hoc:
+        cfg.watchlist = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
+
     print(DISCLAIMER)
     print(f"Scanning {len(cfg.watchlist)} tickers "
           f"(portfolio ${cfg.account.portfolio_value:.2f}, "
@@ -52,7 +58,19 @@ def cmd_scan(args):
         md_path = alerts.write_markdown_report(results, reasons, cfg)
         print(f"Markdown report: {md_path}")
 
-    iv_history.log_daily_snapshot(cfg)
+    if not ad_hoc:
+        # Only build IV history off the real, persistent watchlist -- not
+        # one-off `--tickers` checks.
+        iv_history.log_daily_snapshot(cfg)
+
+
+def cmd_hot(args):
+    cfg = load_config(args.config)
+    top_n = args.top or cfg.most_active.top_n
+    print(f"Checking options activity across {len(cfg.most_active.universe)} liquid names "
+          f"(this can take a minute)...\n")
+    rows = most_active_mod.get_top_active(cfg, top_n=top_n)
+    print(most_active_mod.format_console(rows))
 
 
 def cmd_daily(args):
@@ -163,7 +181,13 @@ def build_parser():
 
     p_scan = sub.add_parser("scan", help="Run today's screen and print/log trade ideas")
     p_scan.add_argument("--verbose", action="store_true", help="Print skip reasons for every ticker")
+    p_scan.add_argument("--tickers", default=None,
+                         help="Comma-separated one-off override of the watchlist (doesn't touch config.yaml or IV history)")
     p_scan.set_defaults(func=cmd_scan)
+
+    p_hot = sub.add_parser("hot", help="Rank a curated universe by today's near-term options activity")
+    p_hot.add_argument("--top", type=int, default=None, help="Override most_active.top_n from config.yaml")
+    p_hot.set_defaults(func=cmd_hot)
 
     p_daily = sub.add_parser("daily", help="Run scan + position checks and email the combined report")
     p_daily.add_argument("--verbose", action="store_true", help="Print skip reasons for every ticker")
