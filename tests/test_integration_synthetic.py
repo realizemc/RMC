@@ -137,7 +137,8 @@ class TestSyntheticPipeline(unittest.TestCase):
 
     def test_backtest_runs_end_to_end_on_synthetic_history(self):
         long_history = _make_bullish_history(n=900, seed=7)
-        with patch("src.data.get_price_history", return_value=long_history):
+        with patch("src.data.get_price_history", return_value=long_history), \
+             patch("src.backtest._fetch_earnings_history", return_value=[]):
             result = backtest_mod.run_backtest(self.cfg, tickers=["FAKEUP"], years=3)
 
         self.assertGreater(result.starting_capital, 0)

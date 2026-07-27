@@ -11,9 +11,10 @@ Important limitations, read before trusting the numbers:
   - Fills are at the model's mid price with no slippage or commissions.
   - Trend/RSI/volatility-percentile signals ARE the real, exact functions
     used by the live screener, just evaluated on historical data.
-  - Earnings-date avoidance is NOT modeled here (unlike the live strategy)
-    -- historical earnings-calendar data isn't wired in, so the backtest
-    may hold positions through earnings that the live system would skip.
+  - Earnings-date avoidance IS modeled (respects cfg.strategy.avoid_earnings),
+    using each ticker's actual historical earnings dates -- a candidate entry
+    is skipped if it would hold through a real past earnings report, same as
+    the live strategy would skip it today.
 
 Treat results as "does this entry logic have positive expectancy", not
 "this is what your account would have actually done."
@@ -131,6 +132,28 @@ def _position_value(S_t, T, r, pos) -> float:
     return long_val - short_val
 
 
+def _fetch_earnings_history(ticker: str, years: int) -> list:
+    """Past + near-future earnings dates for `ticker`, as plain dates.
+
+    Used to replicate the live strategy's earnings-avoidance filter in the
+    backtest -- unlike `data.get_next_earnings_date` (which only looks
+    forward from today), this needs real historical dates so past entries
+    can be checked against what was actually known at the time.
+    """
+    try:
+        limit = (years + 2) * 5  # ~4/year plus buffer, cheap to over-fetch once per ticker
+        df = data_mod._ticker(ticker).get_earnings_dates(limit=limit)
+    except Exception:
+        return []
+    if df is None or df.empty:
+        return []
+    return sorted(ts.date() for ts in df.index)
+
+
+def _held_through_earnings(entry_date, expiration_date, earnings_dates: list) -> bool:
+    return any(entry_date <= e <= expiration_date for e in earnings_dates)
+
+
 def _build_signal_frame(ticker: str, cfg: Config, years: int) -> pd.DataFrame | None:
     history = data_mod.get_price_history(ticker, period=f"{years + 1}y")
     if history.empty or len(history) < max(cfg.strategy.sma_slow, 60) + 30:
@@ -162,6 +185,10 @@ def run_backtest(cfg: Config, tickers: list | None = None, years: int = 3, vol_m
 
     if not signal_frames:
         return BacktestResult(starting_capital=cfg.account.portfolio_value, ending_equity=cfg.account.portfolio_value)
+
+    earnings_by_ticker = {}
+    if cfg.strategy.avoid_earnings:
+        earnings_by_ticker = {t: _fetch_earnings_history(t, years) for t in signal_frames}
 
     all_dates = sorted(set().union(*(set(df.index) for df in signal_frames.values())))
 
@@ -248,6 +275,11 @@ def run_backtest(cfg: Config, tickers: list | None = None, years: int = 3, vol_m
                         continue
                 if hv_pct > cfg.strategy.iv_rank_max_pct:
                     continue
+
+                if cfg.strategy.avoid_earnings:
+                    approx_exp_date = d.date() + dt.timedelta(days=target_dte)
+                    if _held_through_earnings(d.date(), approx_exp_date, earnings_by_ticker.get(ticker, [])):
+                        continue
 
                 S = float(row["close"])
                 sigma = max(hv20 * vol_multiplier, 0.05)
