@@ -36,6 +36,11 @@ class TestScreenerDiversification(unittest.TestCase):
         self.cfg.account.max_trade_cost_usd = 500.0
         self.cfg.account.max_open_positions = 3
         self.cfg.account.max_correlation = 0.7
+        # Real market-regime check hits the network; keep these tests offline
+        # and focused on diversification/sizing logic.
+        regime_patcher = patch("src.screener.market_regime_mod.get_market_direction", return_value="neutral")
+        regime_patcher.start()
+        self.addCleanup(regime_patcher.stop)
 
     def test_highly_correlated_same_direction_is_skipped(self):
         returns = [0.01, -0.02, 0.03, 0.015, -0.01, 0.02] * 5
@@ -107,6 +112,60 @@ class TestScreenerDiversification(unittest.TestCase):
         self.assertIn("max_open_positions already filled", reasons["B"])
 
 
+class TestScreenerMarketRegime(unittest.TestCase):
+    def setUp(self):
+        self.cfg = load_config(DEFAULT_CONFIG_PATH)
+        self.cfg.account.portfolio_value = 500.0
+        self.cfg.account.max_risk_per_trade_pct = 0.5
+        self.cfg.account.max_trade_cost_usd = 500.0
+        self.cfg.account.max_open_positions = 3
+        self.cfg.market_regime.enabled = True
+
+    def test_bearish_idea_skipped_when_market_is_bullish(self):
+        self.cfg.watchlist = ["A"]
+        ideas = {"A": _make_idea("A", "bearish", cost=50.0)}
+        with patch("src.screener.evaluate_ticker", side_effect=_fake_evaluate(ideas)), \
+             patch("src.screener.market_regime_mod.get_market_direction", return_value="bullish"):
+            results, reasons = run_screen(self.cfg)
+
+        self.assertEqual(results, [])
+        self.assertIn("broad market", reasons["A"])
+        self.assertIn("SPY", reasons["A"])
+
+    def test_bullish_idea_accepted_when_market_is_bullish(self):
+        self.cfg.watchlist = ["A"]
+        ideas = {"A": _make_idea("A", "bullish", cost=50.0)}
+        with patch("src.screener.evaluate_ticker", side_effect=_fake_evaluate(ideas)), \
+             patch("src.screener.market_regime_mod.get_market_direction", return_value="bullish"):
+            results, reasons = run_screen(self.cfg)
+
+        self.assertEqual(len(results), 1)
+
+    def test_both_directions_allowed_when_market_is_neutral(self):
+        self.cfg.watchlist = ["A", "B"]
+        ideas = {
+            "A": _make_idea("A", "bullish", cost=50.0),
+            "B": _make_idea("B", "bearish", cost=60.0),
+        }
+        with patch("src.screener.evaluate_ticker", side_effect=_fake_evaluate(ideas)), \
+             patch("src.screener.market_regime_mod.get_market_direction", return_value="neutral"):
+            results, reasons = run_screen(self.cfg)
+
+        tickers = {r.idea.ticker for r in results}
+        self.assertEqual(tickers, {"A", "B"})
+
+    def test_disabled_skips_the_check_entirely(self):
+        self.cfg.market_regime.enabled = False
+        self.cfg.watchlist = ["A"]
+        ideas = {"A": _make_idea("A", "bearish", cost=50.0)}
+        with patch("src.screener.evaluate_ticker", side_effect=_fake_evaluate(ideas)), \
+             patch("src.screener.market_regime_mod.get_market_direction") as mock_regime:
+            results, _ = run_screen(self.cfg)
+
+        mock_regime.assert_not_called()
+        self.assertEqual(len(results), 1)
+
+
 class TestScreenerConfidenceSizing(unittest.TestCase):
     def setUp(self):
         self.cfg = load_config(DEFAULT_CONFIG_PATH)
@@ -115,6 +174,9 @@ class TestScreenerConfidenceSizing(unittest.TestCase):
         self.cfg.account.max_trade_cost_usd = 500.0
         self.cfg.account.max_open_positions = 3
         self.cfg.account.confidence_size_floor_pct = 0.7  # weak setup budget = $70
+        regime_patcher = patch("src.screener.market_regime_mod.get_market_direction", return_value="neutral")
+        regime_patcher.start()
+        self.addCleanup(regime_patcher.stop)
 
     def test_high_confidence_gets_more_contracts_than_low_confidence(self):
         self.cfg.watchlist = ["STRONG"]

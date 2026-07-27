@@ -18,6 +18,17 @@ def _make_bullish_history(n=900, seed=7):
     return pd.DataFrame({"Close": prices}, index=idx)
 
 
+def _make_clean_trend_history(direction="up", n=900):
+    """A noise-free monotonic trend -- used as the MARKET reference series
+    in gate tests so its trend classification is unambiguous for the whole
+    window (the noisy helpers above are realistic but leave pockets that
+    read 'neutral'/opposite, which is fine for a candidate ticker but makes
+    asserting on the gate itself flaky)."""
+    prices = np.linspace(50, 90, n) if direction == "up" else np.linspace(90, 50, n)
+    idx = pd.date_range(end=pd.Timestamp.today(), periods=n, freq="B")
+    return pd.DataFrame({"Close": prices}, index=idx)
+
+
 class TestHeldThroughEarnings(unittest.TestCase):
     def test_true_when_earnings_falls_in_window(self):
         entry = dt.date(2026, 1, 1)
@@ -99,6 +110,61 @@ class TestRunBacktestEarningsAvoidance(unittest.TestCase):
         self.cfg.strategy.avoid_earnings = True
         with patch("src.data.get_price_history", return_value=self.history), \
              patch("src.backtest._fetch_earnings_history", return_value=[]):
+            result = backtest_mod.run_backtest(self.cfg, tickers=["FAKEUP"], years=3)
+
+        self.assertGreaterEqual(len(result.trades), 1)
+
+
+class TestRunBacktestMarketRegime(unittest.TestCase):
+    def setUp(self):
+        self.cfg = load_config(DEFAULT_CONFIG_PATH)
+        self.cfg.strategy.avoid_earnings = False  # isolate the market-regime effect
+        self.bullish_history = _make_bullish_history()
+        self.clean_up = _make_clean_trend_history("up")
+        self.clean_down = _make_clean_trend_history("down")
+
+    def _dispatch(self, reference_history):
+        def _get(ticker, period="1y"):
+            if ticker == self.cfg.market_regime.reference_ticker:
+                return reference_history
+            return self.bullish_history  # a predominantly (not purely) bullish setup
+        return _get
+
+    def test_bullish_candidate_suppressed_when_market_is_bearish(self):
+        self.cfg.market_regime.enabled = True
+        with patch("src.data.get_price_history", side_effect=self._dispatch(self.clean_down)):
+            result = backtest_mod.run_backtest(self.cfg, tickers=["FAKEUP"], years=3)
+
+        # The candidate's own (noisy) history has brief bearish-reading
+        # stretches too -- those are legitimately ALIGNED with a bearish
+        # market and should still be allowed. What the gate must block is
+        # any BULLISH entry while the market itself is bearish.
+        self.assertGreaterEqual(len(result.trades), 1)  # sanity: not trivially vacuous
+        self.assertTrue(all(t.direction == "bearish" for t in result.trades))
+
+    def test_bullish_candidate_allowed_when_market_is_bullish(self):
+        self.cfg.market_regime.enabled = True
+        with patch("src.data.get_price_history", side_effect=self._dispatch(self.clean_up)):
+            result = backtest_mod.run_backtest(self.cfg, tickers=["FAKEUP"], years=3)
+
+        self.assertGreaterEqual(len(result.trades), 1)
+
+    def test_disabled_ignores_market_regime_entirely(self):
+        self.cfg.market_regime.enabled = False
+        with patch("src.data.get_price_history", side_effect=self._dispatch(self.clean_down)):
+            result = backtest_mod.run_backtest(self.cfg, tickers=["FAKEUP"], years=3)
+
+        self.assertGreaterEqual(len(result.trades), 1)
+
+    def test_missing_reference_data_fails_open(self):
+        self.cfg.market_regime.enabled = True
+
+        def _get(ticker, period="1y"):
+            if ticker == self.cfg.market_regime.reference_ticker:
+                return pd.DataFrame()  # reference ticker fetch fails
+            return self.bullish_history
+
+        with patch("src.data.get_price_history", side_effect=_get):
             result = backtest_mod.run_backtest(self.cfg, tickers=["FAKEUP"], years=3)
 
         self.assertGreaterEqual(len(result.trades), 1)

@@ -79,6 +79,12 @@ class MostActiveConfig:
 
 
 @dataclass
+class MarketRegimeConfig:
+    enabled: bool
+    reference_ticker: str
+
+
+@dataclass
 class Config:
     account: AccountConfig
     watchlist: list
@@ -88,6 +94,7 @@ class Config:
     alerts: AlertsConfig
     notifications: NotificationsConfig
     most_active: MostActiveConfig
+    market_regime: MarketRegimeConfig
     path: str = field(default=DEFAULT_CONFIG_PATH)
 
 
@@ -104,6 +111,7 @@ def load_config(path: str = DEFAULT_CONFIG_PATH) -> Config:
         alerts=AlertsConfig(**raw["alerts"]),
         notifications=NotificationsConfig(**raw["notifications"]),
         most_active=MostActiveConfig(**raw["most_active"]),
+        market_regime=MarketRegimeConfig(**raw["market_regime"]),
         path=path,
     )
 

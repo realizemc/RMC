@@ -68,6 +68,10 @@ class TestSyntheticPipeline(unittest.TestCase):
         self.S = float(self.history["Close"].iloc[-1])
         self.expiration = (dt.date.today() + dt.timedelta(days=35)).isoformat()
         self.calls, self.puts = _make_option_chain(self.S, self.expiration)
+        # Real market-regime check hits the network; keep these tests offline.
+        regime_patcher = patch("src.screener.market_regime_mod.get_market_direction", return_value="neutral")
+        regime_patcher.start()
+        self.addCleanup(regime_patcher.stop)
 
     def _snapshot(self, ticker, expiration, underlying_price=None):
         return data_mod.OptionChainSnapshot(

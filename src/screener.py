@@ -1,7 +1,10 @@
 """Scans the configured watchlist and turns raw TradeIdeas into sized,
 budget-checked recommendations, capped at max_open_positions.
 
-Two extra passes beyond plain budget-fitting:
+Three extra passes beyond plain budget-fitting:
+  - Market regime: an idea is skipped if it bets against the broad market's
+    own trend that day ("don't fight the tape") -- see `market_regime` in
+    config.yaml.
   - Diversification: a candidate is skipped if it's too correlated with an
     already-accepted idea in the same direction (see `max_correlation` in
     config.yaml) -- otherwise a small account's 3 open slots could all be
@@ -17,6 +20,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from src import market_regime as market_regime_mod
 from src.config import Config
 from src.position_sizing import SizingResult, size_trade
 from src.strategy import TradeIdea, evaluate_ticker
@@ -53,6 +57,21 @@ def run_screen(cfg: Config, verbose: bool = False) -> tuple[list[ScreenResult], 
             candidates.append(idea)
         if verbose:
             print(f"[{ticker}] {reason}")
+
+    if cfg.market_regime.enabled:
+        market_direction = market_regime_mod.get_market_direction(cfg)
+        if market_direction in ("bullish", "bearish"):
+            aligned = []
+            for idea in candidates:
+                if idea.direction != market_direction:
+                    reasons[idea.ticker] = (
+                        f"cleared strategy filters but skipped: broad market "
+                        f"({cfg.market_regime.reference_ticker}) is in a {market_direction} trend "
+                        f"today, avoiding a {idea.direction} bet against it"
+                    )
+                    continue
+                aligned.append(idea)
+            candidates = aligned
 
     # Cheapest ideas first: on a small account, fitting more distinct trades
     # under the budget matters more than chasing the single "best" setup.

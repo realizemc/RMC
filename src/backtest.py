@@ -15,6 +15,13 @@ Important limitations, read before trusting the numbers:
     using each ticker's actual historical earnings dates -- a candidate entry
     is skipped if it would hold through a real past earnings report, same as
     the live strategy would skip it today.
+  - Market-regime alignment IS modeled (respects cfg.market_regime.enabled)
+    -- an entry is skipped on days the reference ticker's own historical
+    trend opposes the candidate's direction, same "don't fight the tape"
+    rule the live screener applies.
+  - Diversification (correlation) and confidence-weighted sizing are NOT
+    modeled here -- every accepted entry uses flat, unscaled sizing, and
+    ticker-vs-ticker correlation isn't checked, unlike the live screener.
 
 Treat results as "does this entry logic have positive expectancy", not
 "this is what your account would have actually done."
@@ -29,6 +36,7 @@ import pandas as pd
 
 from src import data as data_mod
 from src import indicators
+from src import market_regime as market_regime_mod
 from src.config import Config
 from src.options_pricing import bs_delta, bs_price
 from src.position_sizing import size_trade
@@ -190,6 +198,16 @@ def run_backtest(cfg: Config, tickers: list | None = None, years: int = 3, vol_m
     if cfg.strategy.avoid_earnings:
         earnings_by_ticker = {t: _fetch_earnings_history(t, years) for t in signal_frames}
 
+    market_trend_by_date = {}
+    if cfg.market_regime.enabled:
+        market_sf = _build_signal_frame(cfg.market_regime.reference_ticker, cfg, years)
+        if market_sf is not None:
+            # Keyed by plain date, not Timestamp -- the reference ticker's
+            # index is fetched independently from each candidate's, so its
+            # time-of-day component isn't guaranteed to match exactly even
+            # for "the same day."
+            market_trend_by_date = {ts.date(): trend for ts, trend in market_sf["trend"].items()}
+
     all_dates = sorted(set().union(*(set(df.index) for df in signal_frames.values())))
 
     cash = cfg.account.portfolio_value
@@ -279,6 +297,11 @@ def run_backtest(cfg: Config, tickers: list | None = None, years: int = 3, vol_m
                 if cfg.strategy.avoid_earnings:
                     approx_exp_date = d.date() + dt.timedelta(days=target_dte)
                     if _held_through_earnings(d.date(), approx_exp_date, earnings_by_ticker.get(ticker, [])):
+                        continue
+
+                if cfg.market_regime.enabled:
+                    market_trend = market_trend_by_date.get(d.date(), "neutral")
+                    if market_trend in ("bullish", "bearish") and market_trend != trend:
                         continue
 
                 S = float(row["close"])

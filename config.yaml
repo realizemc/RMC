@@ -27,6 +27,16 @@ account:
   # scales the SAME per-trade caps above -- it never raises them.
   confidence_size_floor_pct: 0.7
 
+market_regime:
+  # "Don't fight the tape": skip a bullish idea if the broad market itself
+  # is in a downtrend that day (and skip bearish ideas if the market is in
+  # an uptrend), even if the individual ticker looks fine on its own. Uses
+  # the exact same trend signal (fast/slow SMA vs price) already used
+  # per-ticker, just applied to reference_ticker instead. If the market
+  # itself has no clear trend, nothing is restricted.
+  enabled: true
+  reference_ticker: "SPY"
+
 watchlist:
   # Liquid, optionable, cheap-enough-premium names. Edit freely.
   # Cheap-underlying names are included because $500 accounts need low
