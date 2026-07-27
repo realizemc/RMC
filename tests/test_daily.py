@@ -28,6 +28,10 @@ class TestDaily(unittest.TestCase):
         self.cfg = load_config(DEFAULT_CONFIG_PATH)
         self.cfg.alerts.log_dir = self.tmp_dir
         self.cfg.data.cache_dir = self.tmp_dir
+        # Tests exercise the enabled/disabled email paths explicitly; don't
+        # depend on whatever notifications.enabled happens to be in the
+        # checked-in config.yaml.
+        self.cfg.notifications.enabled = True
         # Real IV-history logging and the hot-list ranking both hit the
         # network per ticker; keep these tests offline and focused on
         # email/report logic.

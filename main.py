@@ -84,7 +84,9 @@ def cmd_daily(args):
     if result.md_path:
         print(f"Markdown report: {result.md_path}")
 
-    if not result.email_attempted:
+    if not cfg.notifications.enabled:
+        print("\nEmail notifications disabled (notifications.enabled is false) -- see the report file above.")
+    elif not result.email_attempted:
         print("\nEmail not sent (nothing to report and send_on_empty is false).")
     elif result.email_sent:
         print(f"\nEmailed report to {cfg.notifications.to_email}")

@@ -111,7 +111,10 @@ alerts:
   write_markdown: true
 
 notifications:
-  enabled: true
+  # Email delivery is off -- no Gmail OAuth credentials configured. The
+  # scan still runs and writes logs/report_YYYY-MM-DD.md every time;
+  # check that file directly instead of getting an email.
+  enabled: false
   to_email: "mattc423542@gmail.com"
   # Include hold/take-profit/stop-loss/time-exit guidance on tracked open
   # positions in the same daily email as the new-idea scan.
