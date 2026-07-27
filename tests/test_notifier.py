@@ -1,8 +1,31 @@
+import base64
 import os
 import unittest
 from unittest.mock import MagicMock, patch
 
+import requests
+
 from src.notifier import NotifierError, send_email
+
+ENV = {
+    "GMAIL_SENDER_ADDRESS": "me@gmail.com",
+    "GMAIL_OAUTH_CLIENT_ID": "client-id",
+    "GMAIL_OAUTH_CLIENT_SECRET": "client-secret",
+    "GMAIL_OAUTH_REFRESH_TOKEN": "refresh-token",
+}
+
+
+def _mock_token_response():
+    resp = MagicMock()
+    resp.raise_for_status.return_value = None
+    resp.json.return_value = {"access_token": "fake-access-token"}
+    return resp
+
+
+def _mock_send_response():
+    resp = MagicMock()
+    resp.raise_for_status.return_value = None
+    return resp
 
 
 class TestNotifier(unittest.TestCase):
@@ -11,49 +34,52 @@ class TestNotifier(unittest.TestCase):
             with self.assertRaises(NotifierError):
                 send_email("subject", "body", "to@example.com")
 
-    def test_raises_when_only_one_credential_set(self):
+    def test_raises_when_credentials_incomplete(self):
         with patch.dict(os.environ, {"GMAIL_SENDER_ADDRESS": "me@gmail.com"}, clear=True):
             with self.assertRaises(NotifierError):
                 send_email("subject", "body", "to@example.com")
 
-    def test_sends_via_smtp_when_credentials_present(self):
-        env = {"GMAIL_SENDER_ADDRESS": "me@gmail.com", "GMAIL_APP_PASSWORD": "app-pass"}
-        with patch.dict(os.environ, env, clear=True), patch("smtplib.SMTP_SSL") as mock_smtp_cls:
-            mock_server = MagicMock()
-            mock_smtp_cls.return_value.__enter__.return_value = mock_server
+    def test_sends_via_gmail_api_when_credentials_present(self):
+        with patch.dict(os.environ, ENV, clear=True), patch("src.notifier.requests.post") as mock_post:
+            mock_post.side_effect = [_mock_token_response(), _mock_send_response()]
 
             send_email("hello", "world", "to@example.com")
 
-            mock_smtp_cls.assert_called_once_with("smtp.gmail.com", 465, timeout=30)
-            mock_server.login.assert_called_once_with("me@gmail.com", "app-pass")
-            self.assertTrue(mock_server.send_message.called)
-            sent_msg = mock_server.send_message.call_args[0][0]
-            self.assertEqual(sent_msg["Subject"], "hello")
-            self.assertEqual(sent_msg["From"], "me@gmail.com")
-            self.assertEqual(sent_msg["To"], "to@example.com")
+            self.assertEqual(mock_post.call_count, 2)
+            token_call, send_call = mock_post.call_args_list
+            self.assertEqual(token_call.args[0], "https://oauth2.googleapis.com/token")
+            self.assertEqual(send_call.args[0], "https://gmail.googleapis.com/gmail/v1/users/me/messages/send")
+            self.assertEqual(send_call.kwargs["headers"]["Authorization"], "Bearer fake-access-token")
+
+            raw = send_call.kwargs["json"]["raw"]
+            decoded = base64.urlsafe_b64decode(raw.encode("ascii"))
+            self.assertIn(b"Subject: hello", decoded)
+            self.assertIn(b"From: me@gmail.com", decoded)
+            self.assertIn(b"To: to@example.com", decoded)
 
     def test_sends_multipart_when_html_body_given(self):
-        env = {"GMAIL_SENDER_ADDRESS": "me@gmail.com", "GMAIL_APP_PASSWORD": "app-pass"}
-        with patch.dict(os.environ, env, clear=True), patch("smtplib.SMTP_SSL") as mock_smtp_cls:
-            mock_server = MagicMock()
-            mock_smtp_cls.return_value.__enter__.return_value = mock_server
+        with patch.dict(os.environ, ENV, clear=True), patch("src.notifier.requests.post") as mock_post:
+            mock_post.side_effect = [_mock_token_response(), _mock_send_response()]
 
             send_email("hello", "plain text", "to@example.com", html_body="<b>rich</b>")
 
-            sent_msg = mock_server.send_message.call_args[0][0]
-            self.assertTrue(sent_msg.is_multipart())
-            plain_part = sent_msg.get_body(preferencelist=("plain",))
-            html_part = sent_msg.get_body(preferencelist=("html",))
-            self.assertIn("plain text", plain_part.get_content())
-            self.assertIn("<b>rich</b>", html_part.get_content())
+            send_call = mock_post.call_args_list[1]
+            raw = send_call.kwargs["json"]["raw"]
+            decoded = base64.urlsafe_b64decode(raw.encode("ascii"))
+            self.assertIn(b"plain text", decoded)
+            self.assertIn(b"<b>rich</b>", decoded)
 
-    def test_wraps_smtp_exceptions(self):
-        import smtplib
-        env = {"GMAIL_SENDER_ADDRESS": "me@gmail.com", "GMAIL_APP_PASSWORD": "app-pass"}
-        with patch.dict(os.environ, env, clear=True), patch("smtplib.SMTP_SSL") as mock_smtp_cls:
-            mock_server = MagicMock()
-            mock_server.login.side_effect = smtplib.SMTPAuthenticationError(535, b"bad creds")
-            mock_smtp_cls.return_value.__enter__.return_value = mock_server
+    def test_wraps_token_refresh_errors(self):
+        with patch.dict(os.environ, ENV, clear=True), patch("src.notifier.requests.post") as mock_post:
+            mock_post.side_effect = requests.RequestException("boom")
+            with self.assertRaises(NotifierError):
+                send_email("subject", "body", "to@example.com")
+
+    def test_wraps_send_errors(self):
+        with patch.dict(os.environ, ENV, clear=True), patch("src.notifier.requests.post") as mock_post:
+            failing_send = MagicMock()
+            failing_send.raise_for_status.side_effect = requests.RequestException("boom")
+            mock_post.side_effect = [_mock_token_response(), failing_send]
 
             with self.assertRaises(NotifierError):
                 send_email("subject", "body", "to@example.com")

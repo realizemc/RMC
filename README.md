@@ -152,23 +152,37 @@ Edit `config.yaml`:
 
 ### Email setup
 
-Emailing is done via Gmail SMTP. Credentials are **never** stored in this
-repo, `config.yaml`, or anywhere in git -- they're read from two environment
-variables at send time:
+Emailing is done via the Gmail REST API (not SMTP -- some sandboxed
+environments, including Claude Code cloud sessions, only allow outbound
+traffic on port 443, which blocks plain SMTP entirely). Credentials are
+**never** stored in this repo, `config.yaml`, or anywhere in git -- they're
+read from environment variables at send time, and this works the same way
+whether `daily` runs on your own computer or in a sandbox.
 
-1. Turn on 2-Step Verification on the sending Gmail account (required for
-   the next step): https://myaccount.google.com/security
-2. Generate an App Password: https://myaccount.google.com/apppasswords
-   (choose "Mail" / "Other" as the app -- it gives you a 16-character code,
-   different from your normal Gmail password).
-3. Set these two environment variables wherever the script actually runs:
+1. In [Google Cloud Console](https://console.cloud.google.com): create a
+   project (or reuse one), then enable the **Gmail API** under
+   APIs & Services > Library.
+2. APIs & Services > Credentials > Create Credentials > OAuth client ID.
+   Application type: **Desktop app**. Note the Client ID and Client Secret.
+3. If the OAuth consent screen is in "Testing" publishing status, add the
+   sending Gmail address under "Test users."
+4. Run the one-time setup script **on a machine with a real browser** (not
+   inside a sandbox -- it needs an interactive Google login):
+   ```bash
+   python scripts/gmail_oauth_setup.py --client-id ID --client-secret SECRET
+   ```
+   It opens a browser for you to authorize, then prints the environment
+   variables to set.
+5. Set the four printed variables wherever the script actually runs:
    ```bash
    export GMAIL_SENDER_ADDRESS="youraddress@gmail.com"
-   export GMAIL_APP_PASSWORD="the16charapppassword"
+   export GMAIL_OAUTH_CLIENT_ID="..."
+   export GMAIL_OAUTH_CLIENT_SECRET="..."
+   export GMAIL_OAUTH_REFRESH_TOKEN="..."
    ```
    It's fine (and normal) for the sender and `notifications.to_email` to be
    the same address -- you're emailing yourself a report.
-   - **Running this on your own computer**: put those two `export` lines in
+   - **Running this on your own computer**: put those four `export` lines in
      your shell profile (`~/.zshrc`, `~/.bashrc`) or a local `.env` you
      `source` before running, and never commit that file.
    - **Running as a scheduled cloud job** (see below): set them as
@@ -252,7 +266,7 @@ src/
   scorecard.py            Rolls up closed positions into a win-rate/P&L track record
   backtest.py             Historical signal backtest (modeled option prices)
   daily.py                Combines scan + position checks + scorecard + activity into one emailed report
-  notifier.py             Gmail SMTP sending, plain-text + HTML multipart (credentials via env vars only)
+  notifier.py             Gmail API (REST/OAuth2) sending, plain-text + HTML multipart (credentials via env vars only)
   html_report.py          Renders the daily report as an email-safe HTML dashboard
   equity_history.py       Logs a rough daily equity point for the dashboard's sparkline
   iv_history.py           Logs real chain IV daily for a future real IV-rank upgrade
@@ -269,7 +283,8 @@ data_cache/             Price/chain caching, iv_history.csv, equity_history.csv 
 If you're running this via Claude Code's cloud environment, a scheduled
 Routine can run `python main.py daily` automatically every weekday morning
 and email you the report without your laptop needing to be on. That
-requires the `GMAIL_SENDER_ADDRESS` / `GMAIL_APP_PASSWORD` environment
+requires the `GMAIL_SENDER_ADDRESS` / `GMAIL_OAUTH_CLIENT_ID` /
+`GMAIL_OAUTH_CLIENT_SECRET` / `GMAIL_OAUTH_REFRESH_TOKEN` environment
 variables to be set at the **environment** level (persists across scheduled
 runs) rather than typed into a chat -- see
 https://code.claude.com/docs/en/claude-code-on-the-web for how environment
