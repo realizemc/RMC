@@ -55,6 +55,12 @@ This is not financial advice. Use at your own risk.
      to land before the option expires (`strategy.avoid_earnings`) -- a
      long option held through earnings is exposed to an IV crush that can
      erase the premium even when the direction call is right.
+   - **Market-regime alignment** (`src/market_regime.py`, "don't fight the
+     tape"): skips a bullish idea if the broad market itself (SPY by
+     default) is in a downtrend that day, and vice versa for bearish
+     ideas -- even if the individual ticker looks fine in isolation. If
+     the market has no clear trend, nothing is restricted. Config:
+     `market_regime.enabled` / `reference_ticker`.
 2. **Position sizing** (`src/position_sizing.py`, `src/screener.py`) caps
    each idea at `max_risk_per_trade_pct` of your account (or
    `max_trade_cost_usd`, whichever is smaller), and never recommends more
@@ -251,6 +257,7 @@ src/
   equity_history.py       Logs a rough daily equity point for the dashboard's sparkline
   iv_history.py           Logs real chain IV daily for a future real IV-rank upgrade
   most_active.py          `hot` command: ranks a curated universe by options volume
+  market_regime.py        "Don't fight the tape": broad-market direction alignment check
 tests/                  Unit tests for every module above, plus an end-to-end
                         synthetic-data integration test
 logs/                   CSV log, markdown reports, tracked positions (gitignored)
