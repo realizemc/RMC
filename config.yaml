@@ -41,6 +41,13 @@ watchlist:
   # Liquid, optionable, cheap-enough-premium names. Edit freely.
   # Cheap-underlying names are included because $500 accounts need low
   # dollar premiums to get more than one shot at a trade.
+  # SPY is included too -- its own trend/RSI/volatility get screened for a
+  # tradeable idea just like every other name below, on top of already
+  # being used as the market_regime.reference_ticker for the "don't fight
+  # the tape" filter. SPY's per-contract premium is pricier than the
+  # cheap-underlying names above, so most SPY ideas here will come out as
+  # a debit spread to fit the account's per-trade budget.
+  - SPY
   - SOFI
   - F
   - PLTR

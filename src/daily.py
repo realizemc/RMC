@@ -44,13 +44,17 @@ def run_daily(cfg: Config, verbose: bool = False) -> DailyResult:
     results, reasons = run_screen(cfg, verbose=verbose)
     csv_path = alerts.append_csv_log(results, cfg)
     scan_path = alerts.save_last_scan(results, cfg)
-    md_path = alerts.write_markdown_report(results, reasons, cfg) if cfg.alerts.write_markdown else None
     iv_history.log_daily_snapshot(cfg)
     equity_history.log_daily_snapshot(cfg)
 
     position_checks = []
     if cfg.notifications.include_position_checks:
         position_checks = positions_mod.check_all_open(cfg)
+
+    md_path = (
+        alerts.write_markdown_report(results, reasons, cfg, position_checks=position_checks)
+        if cfg.alerts.write_markdown else None
+    )
 
     sc = scorecard_mod.compute_scorecard(cfg)
 

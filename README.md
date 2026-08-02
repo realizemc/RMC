@@ -79,7 +79,15 @@ This is not financial advice. Use at your own risk.
      opposite directions aren't flagged -- that's a hedge, not redundancy.
 3. **Alerts** (`src/alerts.py`) print a plain-English trade ticket to your
    terminal, log every idea to `logs/alerts_log.csv`, and write a daily
-   `logs/report_YYYY-MM-DD.md`.
+   `logs/report_YYYY-MM-DD.md`. Every idea and every open-position check
+   leads with an explicit **ACTION** line/badge (`BUY TO OPEN`, `HOLD`,
+   `TAKE PROFIT`, `CUT LOSS`, `TIME EXIT`) -- the same label is used in the
+   console output, the markdown file, and the HTML email dashboard, so
+   there's one unambiguous answer to "what should I actually do here"
+   instead of having to infer it from the raw numbers. Each report also
+   opens with a one-line summary ("N new idea(s), M position(s) need
+   action") so you can tell at a glance whether there's anything to do
+   today at all.
 4. **Position tracking** (`src/positions.py`) lets you tell the system
    "I took idea #2," and later ask it "should I close this?" -- it re-prices
    your specific contract(s) against the live chain and applies profit
@@ -146,6 +154,9 @@ pip install -r requirements.txt
 Edit `config.yaml`:
 - `account.portfolio_value` -- set this to your actual account size.
 - `watchlist` -- liquid, optionable tickers you actually want exposure to.
+  SPY is included by default alongside the cheap-underlying names, so the
+  broad market itself gets screened for a tradeable idea too, not just used
+  internally as the `market_regime.reference_ticker`.
 - `notifications.to_email` -- where the daily report gets sent.
 - Everything else has reasonable defaults; tune `strategy.*` and `exits.*`
   once you've read `src/strategy.py` and understand what each knob does.

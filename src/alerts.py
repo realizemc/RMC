@@ -53,21 +53,36 @@ def _result_to_dict(r: ScreenResult) -> dict:
     }
 
 
+def _idea_action_line(r: ScreenResult) -> str:
+    idea = r.idea
+    struct_label = idea.structure.replace("_", " ").title()
+    return (
+        f"ACTION: BUY TO OPEN -- {r.sizing.contracts}x {idea.ticker} {struct_label} "
+        f"for ~${r.sizing.total_cost:.2f} total ({r.sizing.pct_of_portfolio * 100:.0f}% of portfolio)"
+    )
+
+
 def format_console(results: list[ScreenResult], cfg: Config) -> str:
     if not results:
         return (
+            "ACTION: NOTHING TO DO -- no new trade ideas today.\n\n"
             "No trade ideas cleared every filter today (trend + RSI + volatility "
             "percentile + liquidity + budget). That's expected most days -- this "
             "system is deliberately picky so it doesn't force a bad trade to "
             "produce output."
         )
 
-    lines = []
+    lines = [
+        f"{len(results)} new trade idea(s) cleared every filter today. For each one, the "
+        f"ACTION line below is exactly what to go place in Robinhood if you take it -- "
+        f"the Plan line under it is when to get back out."
+    ]
     for i, r in enumerate(results):
         idea = r.idea
         lines.append(f"\n{'=' * 60}")
         lines.append(f"IDEA #{i}: {idea.ticker}  ({idea.direction.upper()})")
         lines.append(f"{'=' * 60}")
+        lines.append(_idea_action_line(r))
         struct_label = idea.structure.replace("_", " ").title()
         lines.append(f"Structure : {struct_label}")
         lines.append(f"Expiration: {idea.expiration}  ({idea.dte} DTE)")
@@ -111,14 +126,41 @@ def format_console(results: list[ScreenResult], cfg: Config) -> str:
     return "\n".join(lines)
 
 
+def position_action_label(check: dict) -> str:
+    """One-word(ish) headline for the single most urgent thing to do about
+    an open position -- shared by the console/markdown text and the HTML
+    dashboard so both always agree."""
+    if "error" in check:
+        return "DATA UNAVAILABLE"
+    joined = " ".join(check.get("actions", []))
+    if "PROFIT TARGET" in joined:
+        return "TAKE PROFIT"
+    if "STOP LOSS" in joined:
+        return "CUT LOSS"
+    if "DTE LEFT" in joined or "THETA ACCELERATING" in joined:
+        return "TIME EXIT"
+    return "HOLD"
+
+
 def format_position_checks(checks: list[dict]) -> str:
     if not checks:
         return "No open tracked positions."
 
-    lines = []
+    actionable = [c for c in checks if position_action_label(c) not in ("HOLD", "DATA UNAVAILABLE")]
+    if actionable:
+        summary = (
+            f"{len(actionable)} of {len(checks)} open position(s) need action today -- "
+            f"see the ACTION line on each below."
+        )
+    else:
+        summary = f"All {len(checks)} open position(s): HOLD, no exit rule triggered today."
+    lines = [summary]
+
     for c in checks:
         p = c["position"]
+        label = position_action_label(c)
         lines.append(f"\n[{p.id}] {p.contracts}x {p.ticker} {p.structure} {p.expiration}")
+        lines.append(f"  ACTION: {label}")
         if "error" in c:
             lines.append(f"  ERROR: {c['error']}")
             continue
@@ -139,7 +181,10 @@ def format_position_checks(checks: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def write_markdown_report(results: list[ScreenResult], reasons: dict, cfg: Config) -> str:
+def write_markdown_report(
+    results: list[ScreenResult], reasons: dict, cfg: Config,
+    position_checks: list[dict] | None = None,
+) -> str:
     today = dt.date.today().isoformat()
     path = os.path.join(cfg.alerts.log_dir, f"report_{today}.md")
 
@@ -149,20 +194,64 @@ def write_markdown_report(results: list[ScreenResult], reasons: dict, cfg: Confi
                   f"Max open positions: {cfg.account.max_open_positions}")
     lines.append("")
 
+    lines.append("## What to do today")
+    if results:
+        lines.append(f"- **{len(results)} new trade idea(s)** cleared filters -- see the **ACTION** "
+                      f"line on each idea below.")
+    else:
+        lines.append("- **No new trade ideas** cleared filters today. Nothing to open.")
+    if position_checks is not None:
+        actionable = [c for c in position_checks if position_action_label(c) not in ("HOLD", "DATA UNAVAILABLE")]
+        if actionable:
+            lines.append(f"- **{len(actionable)} of {len(position_checks)} open position(s) need action** -- "
+                          f"see Open Positions below.")
+        elif position_checks:
+            lines.append(f"- All {len(position_checks)} open position(s): **HOLD**, no exit rule triggered.")
+    lines.append("")
+
+    lines.append("## New trade ideas")
     if not results:
         lines.append("No ideas cleared filters today.")
     else:
         for i, r in enumerate(results):
             idea = r.idea
-            lines.append(f"## Idea #{i}: {idea.ticker} ({idea.direction}, {idea.structure})")
+            struct_label = idea.structure.replace("_", " ").title()
+            lines.append(f"### Idea #{i}: {idea.ticker} ({idea.direction}, {idea.structure})")
+            lines.append(
+                f"**ACTION: BUY TO OPEN -- {r.sizing.contracts}x {idea.ticker} {struct_label} "
+                f"for ~${r.sizing.total_cost:.2f} total ({r.sizing.pct_of_portfolio * 100:.0f}% of portfolio)**"
+            )
             lines.append(f"- Expiration: {idea.expiration} ({idea.dte} DTE)")
             lines.append(f"- Long leg: ${idea.long_leg.strike:.2f} @ ~${idea.long_leg.mid:.2f} (delta {idea.long_leg.delta:+.2f})")
             if idea.short_leg:
                 lines.append(f"- Short leg: ${idea.short_leg.strike:.2f} @ ~${idea.short_leg.mid:.2f} (delta {idea.short_leg.delta:+.2f})")
             lines.append(f"- Cost/contract: ${idea.cost_per_contract:.2f}  |  Suggested contracts: {r.sizing.contracts}")
             lines.append(f"- Max loss: ${idea.max_loss_per_contract:.2f}  |  Breakeven: ${idea.breakeven:.2f}")
+            lines.append(
+                f"- Exit plan: take profit around +{cfg.exits.profit_target_pct * 100:.0f}%, cut losses around "
+                f"-{cfg.exits.stop_loss_pct * 100:.0f}%, or close by {idea.dte - cfg.exits.close_by_dte} DTE."
+            )
             lines.append(f"- Rationale: {idea.rationale}")
             lines.append("")
+
+    if position_checks is not None:
+        lines.append("## Open positions")
+        if not position_checks:
+            lines.append("No open tracked positions.")
+        else:
+            for c in position_checks:
+                p = c["position"]
+                label = position_action_label(c)
+                lines.append(f"### {p.ticker} -- {p.contracts}x {p.structure} {p.expiration}")
+                lines.append(f"**ACTION: {label}**")
+                if "error" in c:
+                    lines.append(f"- ERROR: {c['error']}")
+                else:
+                    lines.append(f"- DTE remaining: {c['dte_remaining']}  |  P/L: {c['pnl_pct'] * 100:+.1f}% "
+                                  f"(${c['pnl_dollars']:+.2f})")
+                    for action in c["actions"]:
+                        lines.append(f"- {action}")
+                lines.append("")
 
     lines.append("## Skipped tickers")
     for ticker, reason in reasons.items():

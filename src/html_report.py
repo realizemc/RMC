@@ -11,6 +11,7 @@ import html as html_mod
 
 import pandas as pd
 
+from src import alerts
 from src.config import Config
 from src.scorecard import Scorecard
 
@@ -63,12 +64,21 @@ def _idea_card(result) -> str:
         else "uncapped (long option)"
     )
 
+    action_badge = _badge("BUY TO OPEN", "#e8eaf6", "#283593")
+    action_line = (
+        f'<div style="{FONT}font-size:13px;font-weight:700;color:#283593;margin-top:8px;">'
+        f'ACTION: Buy {result.sizing.contracts}x {_esc(idea.ticker)} {_esc(struct_label)} for '
+        f'~${result.sizing.total_cost:.2f} total ({result.sizing.pct_of_portfolio * 100:.0f}% of portfolio)'
+        f'</div>'
+    )
+
     return f"""
     <div style="{CARD_BORDER}padding:16px;margin-bottom:12px;">
       <div style="{FONT}font-size:15px;font-weight:700;color:#1a1a2e;">
-        {_esc(idea.ticker)} &nbsp; {direction_badge} &nbsp;
+        {_esc(idea.ticker)} &nbsp; {action_badge} &nbsp; {direction_badge} &nbsp;
         <span style="color:{MUTED};font-weight:400;font-size:12px;">{_esc(struct_label)}</span>
       </div>
+      {action_line}
       {legs}
       <table role="presentation" width="100%" style="{FONT}font-size:12px;color:{MUTED};margin-top:10px;border-collapse:collapse;">
         <tr>
@@ -98,19 +108,25 @@ def _idea_card(result) -> str:
     """
 
 
+_URGENCY_COLORS = {
+    "DATA UNAVAILABLE": ("#f5f5f5", "#616161"),
+    "TAKE PROFIT": ("#e3f2fd", "#1565c0"),
+    "CUT LOSS": ("#ffebee", "#c62828"),
+    "TIME EXIT": ("#fff8e1", "#ef6c00"),
+    "HOLD": ("#f5f5f5", "#616161"),
+}
+
+
 def _position_urgency(check: dict) -> tuple[str, str, str]:
-    """Returns (bg, fg, label) for the most urgent action on a position."""
-    if "error" in check:
-        return "#f5f5f5", "#616161", "DATA UNAVAILABLE"
-    actions = check.get("actions", [])
-    joined = " ".join(actions)
-    if "PROFIT TARGET" in joined:
-        return "#e3f2fd", "#1565c0", "TAKE PROFIT"
-    if "STOP LOSS" in joined:
-        return "#ffebee", "#c62828", "CUT LOSS"
-    if "DTE LEFT" in joined or "THETA ACCELERATING" in joined:
-        return "#fff8e1", "#ef6c00", "TIME EXIT"
-    return "#f5f5f5", "#616161", "HOLD"
+    """Returns (bg, fg, label) for the most urgent action on a position.
+
+    Label logic lives in `alerts.position_action_label` so the email's HTML
+    dashboard and the plain-text/markdown reports never disagree about what
+    a position's most urgent action is.
+    """
+    label = alerts.position_action_label(check)
+    bg, fg = _URGENCY_COLORS[label]
+    return bg, fg, label
 
 
 def _position_row(check: dict) -> str:
@@ -252,6 +268,21 @@ def render_html(
     else:
         activity_html = _activity_table(hot_rows or [])
 
+    actionable_positions = [
+        c for c in position_checks if alerts.position_action_label(c) not in ("HOLD", "DATA UNAVAILABLE")
+    ]
+    if not results and not actionable_positions:
+        summary_text = "Nothing to do today -- no new ideas, and every open position is a HOLD."
+        summary_color = MUTED
+    else:
+        pieces = []
+        if results:
+            pieces.append(f"{len(results)} new idea(s) below to consider opening")
+        if actionable_positions:
+            pieces.append(f"{len(actionable_positions)} open position(s) need action")
+        summary_text = " · ".join(pieces) + " -- see the ACTION line on each card."
+        summary_color = "#ffd54f"
+
     return f"""
     <div style="{FONT}max-width:640px;margin:0 auto;background:#f4f4f7;padding:16px;">
       <div style="background:#1a1a2e;color:#ffffff;padding:18px 22px;border-radius:10px 10px 0 0;">
@@ -259,6 +290,9 @@ def render_html(
         <div style="font-size:12px;color:#c7c7d9;margin-top:4px;">
           Portfolio ${cfg.account.portfolio_value:.2f} &middot; max risk/trade {cfg.account.max_risk_per_trade_pct * 100:.0f}%
           &middot; {len(position_checks)} tracked position(s)
+        </div>
+        <div style="font-size:13px;font-weight:700;color:{summary_color};margin-top:10px;">
+          {_esc(summary_text)}
         </div>
       </div>
       <div style="background:#ffffff;border:1px solid #e3e3e8;border-top:none;border-radius:0 0 10px 10px;padding:20px 22px;">
